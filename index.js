@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
 const vigilanciaRoutes = require('./routes/vigilanciaRoutes');
+const visitantesRoutes = require('./routes/visitantesRoutes');
 
 dotenv.config();
 
@@ -21,6 +22,9 @@ app.use('/api/posts', postRoutes);
 
 // Rutas de vigilancia (registrar visita)
 app.use('/api/vigilancia', vigilanciaRoutes);
+
+// Rutas de visitantes
+app.use('/api/visitantes', visitantesRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
