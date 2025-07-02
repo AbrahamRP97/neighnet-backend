@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -7,9 +9,9 @@ const supabase = createClient(
 );
 
 const registrarUsuario = async (req, res) => {
-  const { nombre, correo, contrasena } = req.body;
+  const { nombre, correo, contrasena, telefono, numero_casa } = req.body;
 
-  if (!nombre || !correo || !contrasena) {
+  if (!nombre || !correo || !contrasena || !telefono || !numero_casa) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
 
@@ -23,13 +25,33 @@ const registrarUsuario = async (req, res) => {
     return res.status(400).json({ error: 'El correo ya está registrado' });
   }
 
+  // Arma el payload
+  const insertPayload = {
+    nombre, 
+    correo, 
+    contrasena, 
+    telefono, 
+    numero_casa, 
+    rol: 'residente'
+  };
+
+  // Log del body recibido
+  console.log('Body recibido en el request:', req.body);
+  // Log del payload preparado para el insert
+  console.log('Payload enviado al insert:', insertPayload);
+
   const { data, error } = await supabase
     .from('usuarios')
-    .insert([{ nombre, correo, contrasena, rol: 'residente' }]);
+    .insert([insertPayload])
+    .select();  // Devuelve el registro insertado
 
-  if (error) return res.status(500).json({ error: 'Error al registrar el usuario' });
+  if (error) {
+    console.error('Error en insert:', error);
+    return res.status(500).json({ error: 'Error al registrar el usuario' });
+  }
 
-  res.status(201).json({ message: 'Usuario registrado correctamente' });
+  console.log('Insertado en Supabase:', data);
+  res.status(201).json({ message: 'Usuario registrado correctamente', data });
 };
 
 
@@ -113,6 +135,84 @@ const eliminarUsuario = async (req, res) => {
   }
 };
 
+const forgotPassword = async (req, res) => {
+  const { correo } = req.body;
+  if (!correo) return res.status(400).json({ error: 'Correo requerido' });
 
+  const { data: user } = await supabase
+    .from('usuarios')
+    .select('correo')
+    .eq('correo', correo)
+    .single();
 
-module.exports = { loginUsuario, registrarUsuario, actualizarUsuario, obtenerUsuario, eliminarUsuario };
+  if (!user) return res.status(404).json({ error: 'Correo no registrado' });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+  await supabase
+    .from('password_resets')
+    .insert([{ user_email: correo, token, expires_at: expiresAt }]);
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: 'tuemail@gmail.com',
+      pass: 'tu_app_password', 
+    },
+  });
+
+  const link = `neighnet://reset-password?token=${token}`;
+
+  try {
+    await transporter.sendMail({
+      from: 'NeighNet <tuemail@gmail.com>',
+      to: correo,
+      subject: 'Restablece tu contraseña',
+      text: `Abre la app NeighNet con este link:\n${link}`,
+    });
+    res.json({ message: 'Correo enviado' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'No se pudo enviar el correo' });
+  }
+};
+
+const resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) return res.status(400).json({ error: 'Datos incompletos' });
+
+  const { data, error } = await supabase
+    .from('password_resets')
+    .select('*')
+    .eq('token', token)
+    .single();
+
+  if (error || !data) return res.status(400).json({ error: 'Token inválido' });
+
+  if (new Date(data.expires_at) < new Date()) {
+    return res.status(400).json({ error: 'Token expirado' });
+  }
+
+  await supabase
+    .from('usuarios')
+    .update({ contrasena: newPassword })
+    .eq('correo', data.user_email);
+
+  await supabase
+    .from('password_resets')
+    .delete()
+    .eq('token', token);
+
+  res.json({ message: 'Contraseña actualizada' });
+};
+
+module.exports = {
+  loginUsuario,
+  registrarUsuario,
+  actualizarUsuario,
+  obtenerUsuario,
+  eliminarUsuario,
+  forgotPassword,
+  resetPassword
+};

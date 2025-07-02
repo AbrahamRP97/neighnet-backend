@@ -18,6 +18,5 @@ app.use('/api/auth', authRoutes);
 // Rutas de publicaciones (crear post, obtener posts, eliminar post)
 app.use('/api/posts', postRoutes);
 
-app.listen(3000, () => {
-  console.log('Server running on port 3000');
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
