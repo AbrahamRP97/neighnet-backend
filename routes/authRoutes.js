@@ -1,6 +1,5 @@
 const express = require('express');
 const { registrarUsuario, loginUsuario, actualizarUsuario, obtenerUsuario, eliminarUsuario } = require('../controllers/authController');
-const { log } = require('console');
 
 const router = express.Router();
 
