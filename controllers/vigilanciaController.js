@@ -1,5 +1,5 @@
-require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -7,60 +7,65 @@ const supabase = createClient(
 );
 
 const registrarVisita = async (req, res) => {
-  const { id_qr, nombre_residente, numero_casa } = req.body;
+  const { id_qr, visitante_id } = req.body;
 
-  if (!id_qr || !nombre_residente || !numero_casa) {
-    return res.status(400).json({ error: 'Datos incompletos' });
+  if (!id_qr || !visitante_id) {
+    return res.status(400).json({ error: 'id_qr y visitante_id son obligatorios' });
   }
 
-  // Verifica si ya hay una entrada
-  const { data: entradas, error: errorEntrada } = await supabase
-    .from('visitas')
-    .select('*')
-    .eq('id_qr', id_qr)
-    .eq('tipo', 'Entrada');
-
-  if (errorEntrada) {
-    console.error('Error al consultar visitas:', errorEntrada);
-    return res.status(500).json({ error: 'Error al consultar visitas' });
-  }
-
-  let tipoVisita = '';
-
-  if (entradas.length === 0) {
-    tipoVisita = 'Entrada';
-  } else {
-    // Verifica si ya hay salida
-    const { data: salidas } = await supabase
+  try {
+    // Verifica si existe una visita con ese id_qr y visitante_id
+    const { data: visitaExistente, error: errorExistente } = await supabase
       .from('visitas')
       .select('*')
       .eq('id_qr', id_qr)
-      .eq('tipo', 'Salida');
+      .eq('visitante_id', visitante_id)
+      .single();
 
-    if (salidas.length === 0) {
-      tipoVisita = 'Salida';
-    } else {
-      return res.status(400).json({ error: 'La visita ya fue registrada como salida' });
+    if (errorExistente && errorExistente.code !== 'PGRST116') {
+      console.error('Error al buscar visita:', errorExistente);
+      return res.status(500).json({ error: 'Error al verificar visita' });
     }
+
+    if (!visitaExistente) {
+      // Primera vez -> registrar entrada
+      const { data, error } = await supabase
+        .from('visitas')
+        .insert([{
+          id_qr,
+          visitante_id,
+          fecha_entrada: new Date().toISOString(),
+        }])
+        .select();
+
+      if (error) {
+        console.error('Error al registrar entrada:', error);
+        return res.status(500).json({ error: 'Error al registrar entrada' });
+      }
+
+      return res.json({ message: 'Entrada registrada', data: data[0] });
+    } else if (!visitaExistente.fecha_salida) {
+      // Ya tiene entrada, ahora registrar salida
+      const { data, error } = await supabase
+        .from('visitas')
+        .update({ fecha_salida: new Date().toISOString() })
+        .eq('id', visitaExistente.id)
+        .select();
+
+      if (error) {
+        console.error('Error al registrar salida:', error);
+        return res.status(500).json({ error: 'Error al registrar salida' });
+      }
+
+      return res.json({ message: 'Salida registrada', data: data[0] });
+    } else {
+      return res.status(400).json({ error: 'Este QR ya fue utilizado para entrada y salida' });
+    }
+
+  } catch (err) {
+    console.error('Error interno:', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
-
-  // Registra la visita
-  const { error } = await supabase
-    .from('visitas')
-    .insert([{
-      id_qr,
-      nombre_residente,
-      numero_casa,
-      tipo: tipoVisita,
-      fecha_hora: new Date().toISOString()
-    }]);
-
-  if (error) {
-    console.error('Error al registrar visita:', error);
-    return res.status(500).json({ error: 'No se pudo registrar la visita' });
-  }
-
-  res.json({ message: `${tipoVisita} registrada correctamente` });
 };
 
 module.exports = { registrarVisita };
