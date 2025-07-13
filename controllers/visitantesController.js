@@ -30,8 +30,10 @@ const listarVisitantes = async (req, res) => {
     .eq('residente_id', residente_id);
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+
+  res.json(data || []); // ✅ nunca envía null
 };
+
 
 // Actualizar visitante
 const actualizarVisitante = async (req, res) => {
