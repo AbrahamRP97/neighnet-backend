@@ -96,23 +96,37 @@ const actualizarUsuario = async (req, res) => {
   const { id } = req.params;
   const { nombre, correo, telefono, numero_casa, foto_url } = req.body;
 
+  // Validación básica
+  if (!nombre || !correo || !telefono || !numero_casa) {
+    return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+  }
+
+  const updatePayload = {
+    nombre,
+    correo,
+    telefono,
+    numero_casa,
+  };
+
+  // Solo agrega la foto si existe
+  if (foto_url) {
+    updatePayload.foto_url = foto_url;
+  }
+
   const { data, error } = await supabase
     .from('usuarios')
-    .update({
-      nombre,
-      correo,
-      telefono,
-      numero_casa,
-      foto_url
-    })
-    .eq('id', id);
+    .update(updatePayload)
+    .eq('id', id)
+    .select();
 
   if (error) {
+    console.error('Error al actualizar perfil:', error);
     return res.status(500).json({ error: 'Error al actualizar perfil' });
   }
 
   res.status(200).json({ message: 'Perfil actualizado', data });
 };
+
 
 const eliminarUsuario = async (req, res) => {
   const { id } = req.params;
