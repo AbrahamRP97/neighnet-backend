@@ -10,6 +10,7 @@ yarn-error.log*
 
 # Environment variables
 .env
+.env.*   # Si tienes archivos .env.local, .env.production, etc.
 
 # OS generated files
 .DS_Store
@@ -18,3 +19,15 @@ Thumbs.db
 # Optional cache folders
 .cache/
 dist/
+tmp/
+temp/
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Misc
+*.swp
+*.swo

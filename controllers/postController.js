@@ -8,11 +8,11 @@ const supabase = createClient(
 
 // Crear una nueva publicación
 const crearPost = async (req, res) => {
-  const { user_id, mensaje, imagen_url } = req.body;
-  console.log('Datos recibidos', req.body);
+  const { mensaje, imagen_url } = req.body;
+  const user_id = req.user?.id; // del token
 
   if (!user_id || !mensaje) {
-    return res.status(400).json({ error: 'user_id y mensaje son requeridos' });
+    return res.status(400).json({ error: 'user_id (token) y mensaje son requeridos' });
   }
 
   const { data, error } = await supabase
@@ -20,7 +20,6 @@ const crearPost = async (req, res) => {
     .insert([{ user_id, mensaje, imagen_url }]);
 
   if (error) {
-    console.error('Error al crear post:', error);
     return res.status(500).json({ error: 'No se pudo crear el post' });
   }
 
@@ -31,20 +30,34 @@ const crearPost = async (req, res) => {
 const obtenerPosts = async (req, res) => {
   const { data, error } = await supabase
     .from('posts')
-    .select('id, mensaje, imagen_url, created_at, usuarios(nombre, foto_url)')
+    .select('id, mensaje, imagen_url, created_at, user_id, usuarios(nombre, foto_url)')
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error al obtener posts:', error);
     return res.status(500).json({ error: 'No se pudieron obtener los posts' });
   }
 
   res.status(200).json(data);
 };
 
-// Eliminar un post
+// Eliminar un post (solo si es dueño)
 const eliminarPost = async (req, res) => {
   const { id } = req.params;
+  const user_id = req.user?.id;
+
+  // Verificar dueño
+  const { data: post } = await supabase
+    .from('posts')
+    .select('user_id')
+    .eq('id', id)
+    .single();
+
+  if (!post) {
+    return res.status(404).json({ error: 'Post no encontrado' });
+  }
+  if (post.user_id !== user_id) {
+    return res.status(403).json({ error: 'No tienes permiso para eliminar este post' });
+  }
 
   const { error } = await supabase
     .from('posts')

@@ -13,16 +13,18 @@
   "type": "commonjs",
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
     "nodemailer": "^7.0.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.3",
     "nodemon": "^3.1.10",
-    "npx": "^10.2.2",
+    "npx": "^3.0.0",
     "ts-node": "^10.9.2",
     "tsc": "^2.0.4",
     "typescript": "^5.8.3"
