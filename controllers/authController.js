@@ -111,11 +111,21 @@ const obtenerUsuario = async (req, res) => {
 const actualizarUsuario = async (req, res) => {
   const { id } = req.params;
   const { nombre, correo, telefono, numero_casa, foto_url } = req.body;
+
   if (!nombre || !correo || !telefono || !numero_casa) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
-  const updatePayload = { nombre, correo, telefono, numero_casa };
-  if (foto_url) updatePayload.foto_url = foto_url;
+
+  const updatePayload = {
+    nombre,
+    correo,
+    telefono,
+    numero_casa,
+  };
+
+  if (foto_url && typeof foto_url === 'string' && foto_url.length > 0) {
+    updatePayload.foto_url = foto_url;
+  }
 
   const { data, error } = await supabase
     .from('usuarios')
@@ -126,6 +136,7 @@ const actualizarUsuario = async (req, res) => {
   if (error) {
     return res.status(500).json({ error: 'Error al actualizar perfil' });
   }
+
   res.status(200).json({ message: 'Perfil actualizado', data });
 };
 
@@ -169,6 +180,9 @@ const forgotPassword = async (req, res) => {
     .from('password_resets')
     .insert([{ user_email: correo, token, expires_at: expiresAt }]);
 
+    console.log('EMAIL_USER', process.env.EMAIL_USER);
+    console.log('EMAIL_PASS', process.env.EMAIL_PASS ? '***' : 'No configurado');
+    
   // Usa variables de entorno para datos de Gmail
   const transporter = nodemailer.createTransport({
     service: 'gmail',
