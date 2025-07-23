@@ -14,16 +14,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Rutas de autenticación (registro, login, perfil)
 app.use('/api/auth', authRoutes);
 
-// Rutas de publicaciones (crear post, obtener posts, eliminar post)
 app.use('/api/posts', postRoutes);
 
-// Rutas de vigilancia (registrar visita)
 app.use('/api/vigilancia', vigilanciaRoutes);
 
-// Rutas de visitantes
 app.use('/api/visitantes', visitantesRoutes);
 
 const PORT = process.env.PORT || 3000;
