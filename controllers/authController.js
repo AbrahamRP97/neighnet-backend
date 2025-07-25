@@ -140,14 +140,21 @@ const actualizarUsuario = async (req, res) => {
   res.status(200).json({ message: 'Perfil actualizado', data });
 };
 
-// Eliminar usuario
+// Eliminar usuario (MEJORADO: elimina visitantes y posts antes)
 const eliminarUsuario = async (req, res) => {
   const { id } = req.params;
   try {
+    // Borra visitantes del usuario
+    await supabase.from('visitantes').delete().eq('usuario_id', id);
+    // Borra posts del usuario
+    await supabase.from('posts').delete().eq('usuario_id', id);
+
+    // Finalmente borra el usuario
     const { error } = await supabase
       .from('usuarios')
       .delete()
       .eq('id', id);
+
     if (error) {
       return res.status(500).json({ error: 'Error al eliminar la cuenta' });
     }
@@ -155,6 +162,47 @@ const eliminarUsuario = async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
+};
+
+// Cambiar contraseña (NUEVO)
+const cambiarContrasena = async (req, res) => {
+  const { id } = req.params;
+  const { oldPassword, newPassword } = req.body;
+
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ error: 'Debes ingresar la contraseña actual y la nueva' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  }
+
+  const { data: usuario, error } = await supabase
+    .from('usuarios')
+    .select('contrasena')
+    .eq('id', id)
+    .single();
+
+  if (error || !usuario) {
+    return res.status(404).json({ error: 'Usuario no encontrado' });
+  }
+
+  const passwordOK = await bcrypt.compare(oldPassword, usuario.contrasena);
+  if (!passwordOK) {
+    return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
+  }
+
+  const hash = await bcrypt.hash(newPassword, 10);
+
+  const { error: updateError } = await supabase
+    .from('usuarios')
+    .update({ contrasena: hash })
+    .eq('id', id);
+
+  if (updateError) {
+    return res.status(500).json({ error: 'Error al actualizar la contraseña' });
+  }
+
+  res.json({ message: 'Contraseña cambiada exitosamente' });
 };
 
 // Forgot password — enviar correo recuperación
@@ -168,7 +216,6 @@ const forgotPassword = async (req, res) => {
     .eq('correo', correo)
     .single();
 
-  // Respuesta genérica para evitar filtrado de usuarios (opcional, best-practice)
   if (!user) {
     return res.json({ message: 'Si el correo está registrado, se enviará un mail de recuperación' });
   }
@@ -180,15 +227,12 @@ const forgotPassword = async (req, res) => {
     .from('password_resets')
     .insert([{ user_email: correo, token, expires_at: expiresAt }]);
 
-    console.log('EMAIL_USER', process.env.EMAIL_USER);
-    console.log('EMAIL_PASS', process.env.EMAIL_PASS ? '***' : 'No configurado');
-    
   // Usa variables de entorno para datos de Gmail
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: process.env.EMAIL_USER,    // <--- .env
-      pass: process.env.EMAIL_PASS,    // <--- .env
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
     },
   });
 
@@ -248,7 +292,6 @@ const resetPassword = async (req, res) => {
     return res.status(400).json({ error: 'Token expirado' });
   }
 
-  // HASH la nueva contraseña antes de guardar
   const hash = await bcrypt.hash(newPassword, 10);
 
   await supabase
@@ -271,5 +314,6 @@ module.exports = {
   obtenerUsuario,
   eliminarUsuario,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  cambiarContrasena
 };

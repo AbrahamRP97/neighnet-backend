@@ -9,7 +9,7 @@ const supabase = createClient(
 // Crear una nueva publicación
 const crearPost = async (req, res) => {
   const { mensaje, imagen_url } = req.body;
-  const user_id = req.user?.id; // del token
+  const user_id = req.user?.id;
 
   if (!user_id || !mensaje) {
     return res.status(400).json({ error: 'user_id (token) y mensaje son requeridos' });
@@ -31,7 +31,7 @@ const crearPost = async (req, res) => {
 const obtenerPosts = async (req, res) => {
   const { data, error } = await supabase
     .from('posts')
-    .select('id, mensaje, imagen_url, created_at, user_id, usuarios(nombre, foto_url)')
+    .select('id, mensaje, imagen_url, created_at, user_id, usuarios(id, nombre, foto_url)')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -81,7 +81,6 @@ const eliminarPost = async (req, res) => {
   const { id } = req.params;
   const user_id = req.user?.id;
 
-  // Verificar dueño
   const { data: post } = await supabase
     .from('posts')
     .select('user_id')

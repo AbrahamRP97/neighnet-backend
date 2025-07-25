@@ -7,61 +7,47 @@ const supabase = createClient(
 );
 
 const registrarVisita = async (req, res) => {
-  const { id_qr, visitante_id } = req.body;
+  const { id_qr } = req.body;
 
-  if (!id_qr || !visitante_id) {
-    return res.status(400).json({ error: 'id_qr y visitante_id son obligatorios' });
+  // Aquí, el visitante_id ya NO es requerido; solo el código QR (si así funciona tu app)
+  if (!id_qr) {
+    return res.status(400).json({ error: 'id_qr es obligatorio' });
   }
 
   try {
-    // Verifica si existe una visita con ese id_qr y visitante_id
-    const { data: visitaExistente, error: errorExistente } = await supabase
+    // Buscar todas las visitas con ese id_qr
+    const { data: visitas, error } = await supabase
       .from('visitas')
       .select('*')
-      .eq('id_qr', id_qr)
-      .eq('visitante_id', visitante_id)
-      .single();
+      .eq('id_qr', id_qr);
 
-    if (errorExistente && errorExistente.code !== 'PGRST116') {
-      console.error('Error al buscar visita:', errorExistente);
+    if (error) {
       return res.status(500).json({ error: 'Error al verificar visita' });
     }
 
-    if (!visitaExistente) {
-      // Primera vez -> registrar entrada
+    // Primera vez: entrada
+    if (!visitas || visitas.length === 0) {
       const { data, error } = await supabase
         .from('visitas')
-        .insert([{
-          id_qr,
-          visitante_id,
-          fecha_entrada: new Date().toISOString(),
-        }])
+        .insert([{ id_qr, fecha_entrada: new Date().toISOString() }])
         .select();
-
-      if (error) {
-        console.error('Error al registrar entrada:', error);
-        return res.status(500).json({ error: 'Error al registrar entrada' });
-      }
-
+      if (error) return res.status(500).json({ error: 'Error al registrar entrada' });
       return res.json({ message: 'Entrada registrada', data: data[0] });
-    } else if (!visitaExistente.fecha_salida) {
-      // Ya tiene entrada, ahora registrar salida
+    }
+
+    // Segunda vez: salida (si la última no tiene fecha_salida)
+    if (visitas.length === 1 && !visitas[0].fecha_salida) {
       const { data, error } = await supabase
         .from('visitas')
         .update({ fecha_salida: new Date().toISOString() })
-        .eq('id', visitaExistente.id)
+        .eq('id', visitas[0].id)
         .select();
-
-      if (error) {
-        console.error('Error al registrar salida:', error);
-        return res.status(500).json({ error: 'Error al registrar salida' });
-      }
-
+      if (error) return res.status(500).json({ error: 'Error al registrar salida' });
       return res.json({ message: 'Salida registrada', data: data[0] });
-    } else {
-      return res.status(400).json({ error: 'Este QR ya fue utilizado para entrada y salida' });
     }
 
+    // Tercera vez o más: no permitir
+    return res.status(400).json({ error: 'Este QR ya fue utilizado para entrada y salida' });
   } catch (err) {
     console.error('Error interno:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
