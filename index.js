@@ -6,6 +6,7 @@ const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
 const vigilanciaRoutes = require('./routes/vigilanciaRoutes');
 const visitantesRoutes = require('./routes/visitantesRoutes');
+const uploadsRoutes = require('./routes/uploadsRoutes');
 
 dotenv.config();
 
@@ -15,12 +16,10 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
-
 app.use('/api/posts', postRoutes);
-
 app.use('/api/vigilancia', vigilanciaRoutes);
-
 app.use('/api/visitantes', visitantesRoutes);
+app.use('/api/uploads', uploadsRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
