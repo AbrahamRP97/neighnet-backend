@@ -1,7 +1,8 @@
 require('dotenv').config();
 
+const { WebSocket } = require('ws');
 // Polyfill WebSocket para entorno Node (Render / Node 20)
-globalThis.WebSocket = require('ws');
+globalThis.WebSocket = WebSocket;
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -14,6 +15,9 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
+  ,{
+    global: { WebSocket }
+  }
 );
 
 module.exports = { supabaseAdmin };
