@@ -1,10 +1,5 @@
 require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY // Service Role: bypass RLS
-);
+const { supabaseAdmin } = require('../supabaseClient');
 
 /**
  * POST /api/uploads/signed-url
@@ -19,7 +14,7 @@ const createSignedUrl = async (req, res) => {
       return res.status(400).json({ error: 'fileName y contentType son requeridos' });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .storage
       .from(bucket)
       .createSignedUploadUrl(fileName);
@@ -30,9 +25,7 @@ const createSignedUrl = async (req, res) => {
     }
 
     const { signedUrl, path } = data;
-
-    // URL pública para mostrar la imagen
-    const pub = supabase.storage.from(bucket).getPublicUrl(path);
+    const pub = supabaseAdmin.storage.from(bucket).getPublicUrl(path);
 
     return res.json({
       signedUrl,
@@ -46,6 +39,4 @@ const createSignedUrl = async (req, res) => {
   }
 };
 
-module.exports = {
-  createSignedUrl,
-};
+module.exports = { createSignedUrl };

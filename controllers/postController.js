@@ -1,10 +1,5 @@
-const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const { supabaseAdmin } = require('../supabaseClient');
 
 // Crear una nueva publicación
 const crearPost = async (req, res) => {
@@ -15,7 +10,7 @@ const crearPost = async (req, res) => {
     return res.status(400).json({ error: 'user_id (token) y mensaje son requeridos' });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('posts')
     .insert([{ user_id, mensaje, imagen_url }])
     .select();
@@ -29,7 +24,7 @@ const crearPost = async (req, res) => {
 
 // Obtener todas las publicaciones (con nombre del usuario)
 const obtenerPosts = async (req, res) => {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('posts')
     .select('id, mensaje, imagen_url, created_at, user_id, usuarios(id, nombre, foto_url)')
     .order('created_at', { ascending: false });
@@ -47,7 +42,7 @@ const actualizarPost = async (req, res) => {
   const { mensaje, imagen_url } = req.body;
   const user_id = req.user?.id;
 
-  const { data: post } = await supabase
+  const { data: post } = await supabaseAdmin
     .from('posts')
     .select('user_id')
     .eq('id', id)
@@ -63,7 +58,7 @@ const actualizarPost = async (req, res) => {
   const updates = { mensaje };
   if (imagen_url !== undefined) updates.imagen_url = imagen_url;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('posts')
     .update(updates)
     .eq('id', id)
@@ -81,7 +76,7 @@ const eliminarPost = async (req, res) => {
   const { id } = req.params;
   const user_id = req.user?.id;
 
-  const { data: post } = await supabase
+  const { data: post } = await supabaseAdmin
     .from('posts')
     .select('user_id')
     .eq('id', id)
@@ -94,7 +89,7 @@ const eliminarPost = async (req, res) => {
     return res.status(403).json({ error: 'No tienes permiso para eliminar este post' });
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('posts')
     .delete()
     .eq('id', id);

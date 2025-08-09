@@ -1,14 +1,9 @@
 require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const { generarToken } = require('../utils/jwt');
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const { supabaseAdmin } = require('../supabaseClient');
 
 // Registrar usuario
 const registrarUsuario = async (req, res) => {
@@ -17,7 +12,7 @@ const registrarUsuario = async (req, res) => {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
 
-  const { data: existingUser } = await supabase
+  const { data: existingUser } = await supabaseAdmin
     .from('usuarios')
     .select('correo')
     .eq('correo', correo)
@@ -36,7 +31,7 @@ const registrarUsuario = async (req, res) => {
     rol: 'residente'
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('usuarios')
     .insert([insertPayload])
     .select();
@@ -64,7 +59,7 @@ const loginUsuario = async (req, res) => {
     return res.status(400).json({ error: 'Correo y contraseña requeridos' });
   }
 
-  const { data: usuario, error } = await supabase
+  const { data: usuario, error } = await supabaseAdmin
     .from('usuarios')
     .select('*')
     .eq('correo', correo)
@@ -94,7 +89,7 @@ const loginUsuario = async (req, res) => {
 const obtenerUsuario = async (req, res) => {
   const { id } = req.params;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('usuarios')
     .select('*')
     .eq('id', id)
@@ -116,18 +111,12 @@ const actualizarUsuario = async (req, res) => {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
 
-  const updatePayload = {
-    nombre,
-    correo,
-    telefono,
-    numero_casa,
-  };
-
+  const updatePayload = { nombre, correo, telefono, numero_casa };
   if (foto_url && typeof foto_url === 'string' && foto_url.length > 0) {
     updatePayload.foto_url = foto_url;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('usuarios')
     .update(updatePayload)
     .eq('id', id)
@@ -140,17 +129,14 @@ const actualizarUsuario = async (req, res) => {
   res.status(200).json({ message: 'Perfil actualizado', data });
 };
 
-// Eliminar usuario (MEJORADO: elimina visitantes y posts antes)
+// Eliminar usuario (borra visitantes y posts antes)
 const eliminarUsuario = async (req, res) => {
   const { id } = req.params;
   try {
-    // Borra visitantes del usuario
-    await supabase.from('visitantes').delete().eq('usuario_id', id);
-    // Borra posts del usuario
-    await supabase.from('posts').delete().eq('usuario_id', id);
+    await supabaseAdmin.from('visitantes').delete().eq('usuario_id', id);
+    await supabaseAdmin.from('posts').delete().eq('user_id', id);
 
-    // Finalmente borra el usuario
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('usuarios')
       .delete()
       .eq('id', id);
@@ -164,7 +150,7 @@ const eliminarUsuario = async (req, res) => {
   }
 };
 
-// Cambiar contraseña (NUEVO)
+// Cambiar contraseña
 const cambiarContrasena = async (req, res) => {
   const { id } = req.params;
   const { oldPassword, newPassword } = req.body;
@@ -176,7 +162,7 @@ const cambiarContrasena = async (req, res) => {
     return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
   }
 
-  const { data: usuario, error } = await supabase
+  const { data: usuario, error } = await supabaseAdmin
     .from('usuarios')
     .select('contrasena')
     .eq('id', id)
@@ -193,7 +179,7 @@ const cambiarContrasena = async (req, res) => {
 
   const hash = await bcrypt.hash(newPassword, 10);
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await supabaseAdmin
     .from('usuarios')
     .update({ contrasena: hash })
     .eq('id', id);
@@ -210,7 +196,7 @@ const forgotPassword = async (req, res) => {
   const { correo } = req.body;
   if (!correo) return res.status(400).json({ error: 'Correo requerido' });
 
-  const { data: user } = await supabase
+  const { data: user } = await supabaseAdmin
     .from('usuarios')
     .select('correo')
     .eq('correo', correo)
@@ -223,17 +209,13 @@ const forgotPassword = async (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
 
-  await supabase
+  await supabaseAdmin
     .from('password_resets')
     .insert([{ user_email: correo, token, expires_at: expiresAt }]);
 
-  // Usa variables de entorno para datos de Gmail
   const transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
   });
 
   const link = `neighnet://reset-password?token=${token}`;
@@ -244,27 +226,22 @@ const forgotPassword = async (req, res) => {
       subject: 'Restablece tu contraseña',
       text: `Hola,
 Has solicitado restablecer tu contraseña en NeighNet.
-Para crear una nueva contraseña, haz clic en el siguiente enlace o ábrelo desde la app:
+Para crear una nueva contraseña, abre este enlace desde la app:
 ${link}
-Si no solicitaste este cambio, puedes ignorar este mensaje.
-Saludos,
-El equipo de NeighNet
+Si no fuiste tú, ignora este mensaje.
 `,
       html: `
         <div style="font-family:sans-serif;max-width:500px;padding:24px;margin:auto;background:#f5faff;border-radius:12px">
           <h2 style="color:#1e90ff">Recupera tu contraseña</h2>
           <p>Hola,</p>
-          <p>Recibimos una solicitud para restablecer tu contraseña en <b>NeighNet</b>.</p>
+          <p>Haz clic en el botón para restablecer tu contraseña en <b>NeighNet</b>.</p>
           <p>
-            <a href="${link}" style="background:#1e90ff;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">
+            <a href="\${link}" style="background:#1e90ff;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">
               Restablecer contraseña
             </a>
           </p>
           <p>Si no fuiste tú, simplemente ignora este mensaje.</p>
-          <br>
           <p style="font-size:13px;color:#888">Este enlace es válido por 1 hora.</p>
-          <hr style="border:none;border-top:1px solid #eee">
-          <p style="font-size:12px;color:#999">© 2025 NeighNet</p>
         </div>
       `,
     });
@@ -280,7 +257,7 @@ const resetPassword = async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) return res.status(400).json({ error: 'Datos incompletos' });
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('password_resets')
     .select('*')
     .eq('token', token)
@@ -294,12 +271,12 @@ const resetPassword = async (req, res) => {
 
   const hash = await bcrypt.hash(newPassword, 10);
 
-  await supabase
+  await supabaseAdmin
     .from('usuarios')
     .update({ contrasena: hash })
     .eq('correo', data.user_email);
 
-  await supabase
+  await supabaseAdmin
     .from('password_resets')
     .delete()
     .eq('token', token);
