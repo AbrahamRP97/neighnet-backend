@@ -1,6 +1,6 @@
 const COMMON_PASSWORDS = new Set([
-  '123456', '123456789', 'qwerty', 'password', '111111', '12345678', 'abc123',
-  '1234567', '12345', 'iloveyou', '000000', '123123', 'admin', 'letmein', 'welcome'
+  '123456', '123456789', 'qwerty', 'password', '111111', '12345678', 'abc123', 'abcdefgh',
+  '1234567', '12345', 'iloveyou', '000000', '123123', 'admin', 'letmein', 'welcome','contraseña'
 ]);
 
 function stripAccents(str = '') {
