@@ -7,22 +7,48 @@ const {
   eliminarUsuario,
   forgotPassword,
   resetPassword,
-  cambiarContrasena
+  cambiarContrasena,
 } = require('../controllers/authController');
+
+const passwordPolicy = require('../middlewares/passwordPolicy');
+const {
+  loginLimiter,
+  forgotPasswordLimiter,
+  resetPasswordLimiter,
+  changePasswordLimiter,
+} = require('../middlewares/rateLimiters');
 
 const router = express.Router();
 
-router.post('/register', registrarUsuario);
-router.post('/login', loginUsuario);
+// Registro: refuerzo de password (campo 'contrasena')
+router.post('/register', passwordPolicy({ field: 'contrasena' }), registrarUsuario);
+
+// Login con rate limit
+router.post('/login', loginLimiter, loginUsuario);
+
+// Perfil
 router.put('/update/:id', actualizarUsuario);
 router.get('/:id', obtenerUsuario);
 router.delete('/delete/:id', eliminarUsuario);
 
-// Ruta para cambiar contraseña
-router.put('/cambiar-contrasena/:id', cambiarContrasena);
+// Cambiar contraseña (usa 'newPassword' en el body) + rate limit
+router.put(
+  '/cambiar-contrasena/:id',
+  changePasswordLimiter,
+  passwordPolicy({ field: 'newPassword' }),
+  cambiarContrasena
+);
 
-// Rutas para recuperación de contraseña
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+// ✅ Alias por compatibilidad con el frontend (/change-password/:id)
+router.put(
+  '/change-password/:id',
+  changePasswordLimiter,
+  passwordPolicy({ field: 'newPassword' }),
+  cambiarContrasena
+);
+
+// Recuperación de contraseña
+router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
+router.post('/reset-password', resetPasswordLimiter, passwordPolicy({ field: 'newPassword' }), resetPassword);
 
 module.exports = router;

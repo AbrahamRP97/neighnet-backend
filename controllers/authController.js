@@ -8,6 +8,7 @@ const { supabaseAdmin } = require('../supabaseClient');
 // Registrar usuario
 const registrarUsuario = async (req, res) => {
   const { nombre, correo, contrasena, telefono, numero_casa } = req.body;
+
   if (!nombre || !correo || !contrasena || !telefono || !numero_casa) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
@@ -17,6 +18,7 @@ const registrarUsuario = async (req, res) => {
     .select('correo')
     .eq('correo', correo)
     .single();
+
   if (existingUser) {
     return res.status(400).json({ error: 'El correo ya está registrado' });
   }
@@ -28,7 +30,7 @@ const registrarUsuario = async (req, res) => {
     contrasena: hash,
     telefono,
     numero_casa,
-    rol: 'residente'
+    rol: 'residente',
   };
 
   const { data, error } = await supabaseAdmin
@@ -45,7 +47,7 @@ const registrarUsuario = async (req, res) => {
     id: usuario.id,
     nombre: usuario.nombre,
     correo: usuario.correo,
-    rol: usuario.rol
+    rol: usuario.rol,
   };
   const token = generarToken(payload);
 
@@ -78,7 +80,7 @@ const loginUsuario = async (req, res) => {
     id: usuario.id,
     nombre: usuario.nombre,
     correo: usuario.correo,
-    rol: usuario.rol
+    rol: usuario.rol,
   };
   const token = generarToken(payload);
 
@@ -153,13 +155,16 @@ const eliminarUsuario = async (req, res) => {
 // Cambiar contraseña
 const cambiarContrasena = async (req, res) => {
   const { id } = req.params;
-  const { oldPassword, newPassword } = req.body;
+  // Acepta 'oldPassword' o 'currentPassword' desde el front
+  const oldPassword = req.body.oldPassword ?? req.body.currentPassword;
+  const newPassword = req.body.newPassword;
 
   if (!oldPassword || !newPassword) {
     return res.status(400).json({ error: 'Debes ingresar la contraseña actual y la nueva' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+
+  if (oldPassword === newPassword) {
+    return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual' });
   }
 
   const { data: usuario, error } = await supabaseAdmin
@@ -271,10 +276,14 @@ const resetPassword = async (req, res) => {
 
   const hash = await bcrypt.hash(newPassword, 10);
 
-  await supabaseAdmin
+  const { error: upErr } = await supabaseAdmin
     .from('usuarios')
     .update({ contrasena: hash })
     .eq('correo', data.user_email);
+
+  if (upErr) {
+    return res.status(500).json({ error: 'No se pudo actualizar la contraseña' });
+  }
 
   await supabaseAdmin
     .from('password_resets')
@@ -292,5 +301,5 @@ module.exports = {
   eliminarUsuario,
   forgotPassword,
   resetPassword,
-  cambiarContrasena
+  cambiarContrasena,
 };
