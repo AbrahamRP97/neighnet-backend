@@ -10,13 +10,13 @@ const {
   cambiarContrasena,
 } = require('../controllers/authController');
 
-const passwordPolicy = require('../middlewares/passwordPolicy');
+const passwordPolicy = require('../middleware/passwordPolicy');
 const {
   loginLimiter,
   forgotPasswordLimiter,
   resetPasswordLimiter,
   changePasswordLimiter,
-} = require('../middlewares/rateLimiters');
+} = require('../middleware/rateLimiters');
 
 const router = express.Router();
 
