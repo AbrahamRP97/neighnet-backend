@@ -20,6 +20,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/vigilancia', vigilanciaRoutes);
 app.use('/api/visitantes', visitantesRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.get('api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
