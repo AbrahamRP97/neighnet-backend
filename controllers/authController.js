@@ -236,7 +236,7 @@ Si no fuiste tú, ignora este mensaje.
           <p>Hola,</p>
           <p>Haz clic en el botón para restablecer tu contraseña en <b>NeighNet</b>.</p>
           <p>
-            <a href="\${link}" style="background:#1e90ff;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">
+            <a href="${link}" style="background:#1e90ff;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">
               Restablecer contraseña
             </a>
           </p>
