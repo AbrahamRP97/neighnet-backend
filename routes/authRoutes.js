@@ -10,6 +10,7 @@ const {
   cambiarContrasena,
 } = require('../controllers/authController');
 
+const authMiddleware = require('../middleware/authMiddleware');
 const passwordPolicy = require('../middleware/passwordPolicy');
 const {
   loginLimiter,
@@ -20,11 +21,14 @@ const {
 
 const router = express.Router();
 
-// Registro: refuerzo de password (campo 'contrasena')
+// Rutas públicas
 router.post('/register', passwordPolicy({ field: 'contrasena' }), registrarUsuario);
-
-// Login con rate limit
 router.post('/login', loginLimiter, loginUsuario);
+router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
+router.post('/reset-password', resetPasswordLimiter, passwordPolicy({ field: 'newPassword' }), resetPassword);
+
+// Rutas protegidas
+router.use(authMiddleware);
 
 // Perfil
 router.put('/update/:id', actualizarUsuario);
@@ -39,16 +43,12 @@ router.put(
   cambiarContrasena
 );
 
-// ✅ Alias por compatibilidad con el frontend (/change-password/:id)
+// Alias por compatibilidad con el frontend (/change-password/:id)
 router.put(
   '/change-password/:id',
   changePasswordLimiter,
   passwordPolicy({ field: 'newPassword' }),
   cambiarContrasena
 );
-
-// Recuperación de contraseña
-router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
-router.post('/reset-password', resetPasswordLimiter, passwordPolicy({ field: 'newPassword' }), resetPassword);
 
 module.exports = router;
