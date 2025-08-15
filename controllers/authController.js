@@ -1,3 +1,4 @@
+// authController.js
 require('dotenv').config();
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
@@ -82,58 +83,80 @@ const loginUsuario = async (req, res) => {
     correo: usuario.correo,
     rol: usuario.rol,
   };
-  const token = generarToken(payload);
+  const token = generarToken(payload); // ← JWT “limpio”
 
   res.status(200).json({ message: 'Login exitoso', usuario: payload, token });
 };
 
-// Obtener perfil usuario
+// Obtener perfil usuario (protegido)
 const obtenerUsuario = async (req, res) => {
   const { id } = req.params;
 
+  // 🔒 Ownership
+  if (req.user?.id && String(req.user.id) !== String(id)) {
+    return res.status(403).json({ error: 'No autorizado' });
+  }
+
   const { data, error } = await supabaseAdmin
     .from('usuarios')
-    .select('*')
+    .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at')
     .eq('id', id)
     .single();
 
   if (error || !data) {
     return res.status(404).json({ error: 'Usuario no encontrado' });
   }
-  if (data.contrasena) delete data.contrasena;
-  res.json(data);
+
+  return res.json(data);
 };
 
-// Actualizar usuario
+// Actualizar usuario (protegido)
+// ⬇️⬇️ ÚNICO CAMBIO AQUÍ: soportar remove_avatar:true y foto_url === '' ➜ NULL
 const actualizarUsuario = async (req, res) => {
   const { id } = req.params;
-  const { nombre, correo, telefono, numero_casa, foto_url } = req.body;
+  const { nombre, correo, telefono, numero_casa, foto_url, remove_avatar } = req.body;
+
+  // 🔒 Ownership
+  if (req.user?.id && String(req.user.id) !== String(id)) {
+    return res.status(403).json({ error: 'No autorizado' });
+  }
 
   if (!nombre || !correo || !telefono || !numero_casa) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
 
   const updatePayload = { nombre, correo, telefono, numero_casa };
-  if (foto_url && typeof foto_url === 'string' && foto_url.length > 0) {
+
+  // ✅ Este bloque garantiza el borrado real en BD:
+  if (remove_avatar === true || (typeof foto_url === 'string' && foto_url.trim() === '')) {
+    updatePayload.foto_url = null;
+  } else if (typeof foto_url === 'string' && foto_url.trim().length > 0) {
     updatePayload.foto_url = foto_url;
   }
+  // ⬆️⬆️ FIN DEL ÚNICO CAMBIO
 
   const { data, error } = await supabaseAdmin
     .from('usuarios')
     .update(updatePayload)
     .eq('id', id)
-    .select();
+    .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at');
 
   if (error) {
     return res.status(500).json({ error: 'Error al actualizar perfil' });
   }
 
-  res.status(200).json({ message: 'Perfil actualizado', data });
+  return res.status(200).json({ message: 'Perfil actualizado', data });
 };
 
-// Eliminar usuario (borra visitantes y posts antes)
+// Eliminar usuario (protegido, borra dependencias)
 const eliminarUsuario = async (req, res) => {
   const { id } = req.params;
+
+  // 🔒 Ownership
+  if (req.user?.id && String(req.user.id) !== String(id)) {
+    return res.status(403).json({ error: 'No autorizado' });
+  }
+
   try {
     await supabaseAdmin.from('visitantes').delete().eq('usuario_id', id);
     await supabaseAdmin.from('posts').delete().eq('user_id', id);
@@ -152,12 +175,16 @@ const eliminarUsuario = async (req, res) => {
   }
 };
 
-// Cambiar contraseña
+// Cambiar contraseña (protegido)
 const cambiarContrasena = async (req, res) => {
   const { id } = req.params;
-  // Acepta 'oldPassword' o 'currentPassword' desde el front
   const oldPassword = req.body.oldPassword ?? req.body.currentPassword;
   const newPassword = req.body.newPassword;
+
+  // 🔒 Ownership
+  if (req.user?.id && String(req.user.id) !== String(id)) {
+    return res.status(403).json({ error: 'No autorizado' });
+  }
 
   if (!oldPassword || !newPassword) {
     return res.status(400).json({ error: 'Debes ingresar la contraseña actual y la nueva' });
@@ -196,7 +223,7 @@ const cambiarContrasena = async (req, res) => {
   res.json({ message: 'Contraseña cambiada exitosamente' });
 };
 
-// Forgot password — enviar correo recuperación
+// Forgot password — enviar correo recuperación (pública)
 const forgotPassword = async (req, res) => {
   const { correo } = req.body;
   if (!correo) return res.status(400).json({ error: 'Correo requerido' });
@@ -257,7 +284,7 @@ Si no fuiste tú, ignora este mensaje.
   }
 };
 
-// Reset password — guardar nueva contraseña
+// Reset password — guardar nueva contraseña (pública)
 const resetPassword = async (req, res) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) return res.status(400).json({ error: 'Datos incompletos' });

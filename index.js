@@ -37,7 +37,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: '2mb' })); // sube si necesitas
+app.use(express.json({ limit: '2mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({
