@@ -92,7 +92,6 @@ const loginUsuario = async (req, res) => {
 const obtenerUsuario = async (req, res) => {
   const { id } = req.params;
 
-  // 🔒 Ownership
   if (req.user?.id && String(req.user.id) !== String(id)) {
     return res.status(403).json({ error: 'No autorizado' });
   }
@@ -104,9 +103,12 @@ const obtenerUsuario = async (req, res) => {
     .single();
 
   if (error || !data) {
+    console.error('[obtenerUsuario] Supabase error:', {
+      code: error?.code, message: error?.message, details: error?.details, hint: error?.hint,
+      idConsultado: id, supabaseUrl: process.env.SUPABASE_URL
+    });
     return res.status(404).json({ error: 'Usuario no encontrado' });
   }
-
   return res.json(data);
 };
 
