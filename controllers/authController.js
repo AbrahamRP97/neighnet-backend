@@ -87,7 +87,7 @@ const loginUsuario = async (req, res) => {
   res.status(200).json({ message: 'Login exitoso', usuario: payload, token });
 };
 
-// Obtener perfil usuario por :id (protegido, mantiene contrato)
+// Obtener perfil usuario por :id (protegido)
 const obtenerUsuario = async (req, res) => {
   const { id } = req.params;
 
@@ -98,7 +98,7 @@ const obtenerUsuario = async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('usuarios')
-    .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at')
+    .select('*') // ⬅️ CAMBIO: no listar columnas para evitar errores por columnas inexistentes
     .eq('id', id)
     .single();
 
@@ -124,7 +124,7 @@ const obtenerUsuarioMe = async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('usuarios')
-    .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at')
+    .select('*') // ⬅️ CAMBIO: no listar columnas para evitar errores por columnas inexistentes
     .eq('id', id)
     .single();
 

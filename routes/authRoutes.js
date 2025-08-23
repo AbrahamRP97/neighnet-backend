@@ -129,7 +129,7 @@ router.use(authMiddleware);
 // Perfil del usuario autenticado (desde token)
 router.get('/me', obtenerUsuarioMe);
 
-// CRUD perfil por id (mantén tus existentes)
+// CRUD perfil por id
 router.put('/update/:id', actualizarUsuario);
 router.get('/:id', obtenerUsuario);
 router.delete('/delete/:id', eliminarUsuario);
