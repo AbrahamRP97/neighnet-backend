@@ -2,8 +2,7 @@ const { verificarToken } = require('../utils/jwt');
 
 function authMiddleware(req, res, next) {
   try {
-    const rawHeader =
-      req.headers['authorization'] || req.headers['Authorization'];
+    const rawHeader = req.headers['authorization'] || req.headers['Authorization'];
 
     if (!rawHeader) {
       return res.status(401).json({ error: 'Token no proporcionado' });
@@ -14,12 +13,10 @@ function authMiddleware(req, res, next) {
 
     let token = '';
     if (parts.length === 1) {
-
       token = parts[0];
     } else if (parts.length === 2 && /^Bearer$/i.test(parts[0])) {
       token = parts[1];
     } else {
-
       token = parts[parts.length - 1];
     }
 
@@ -29,6 +26,12 @@ function authMiddleware(req, res, next) {
 
     const decoded = verificarToken(token);
     if (!decoded) {
+      console.error('[authMiddleware] Token inválido o expirado', {
+        hasBearer: /^Bearer\s/i.test(trimmed),
+        tokenLen: token.length,
+        jwtSecretSet: !!process.env.JWT_SECRET,
+        jwtSecretLen: (process.env.JWT_SECRET || '').length,
+      });
       return res.status(401).json({ error: 'Token inválido o expirado' });
     }
 
