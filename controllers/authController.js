@@ -87,8 +87,7 @@ const loginUsuario = async (req, res) => {
   res.status(200).json({ message: 'Login exitoso', usuario: payload, token });
 };
 
-// Obtener perfil usuario (protegido)
-// (Cambio mínimo: log detallado si Supabase devuelve error; respuesta sigue siendo 404)
+// Obtener perfil usuario por :id (protegido, mantiene contrato)
 const obtenerUsuario = async (req, res) => {
   const { id } = req.params;
 
@@ -118,7 +117,7 @@ const obtenerUsuario = async (req, res) => {
   return res.json(data);
 };
 
-// ✅ NUEVO: Obtener perfil desde el token (protegido)
+// Obtener perfil desde el token (protegido)
 const obtenerUsuarioMe = async (req, res) => {
   const id = req.user?.id;
   if (!id) return res.status(401).json({ error: 'No autorizado' });
@@ -132,7 +131,7 @@ const obtenerUsuarioMe = async (req, res) => {
   if (error || !data) {
     console.error('[obtenerUsuarioMe] Supabase error:', {
       code: error?.code, message: error?.message, details: error?.details, hint: error?.hint,
-      idConsultado: id, supabaseUrl: process.env.SUPABASE_URL,
+      idConsultado: id, supabaseUrl: process.env.SUPABASE_URL
     });
     return res.status(404).json({ error: 'Usuario no encontrado' });
   }
@@ -250,7 +249,6 @@ const cambiarContrasena = async (req, res) => {
 };
 
 // Forgot password — enviar correo recuperación (pública)
-//El link en el correo aún no funciona, falta implementar en la app
 const forgotPassword = async (req, res) => {
   const { correo } = req.body;
   if (!correo) return res.status(400).json({ error: 'Correo requerido' });

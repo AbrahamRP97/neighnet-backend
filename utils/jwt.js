@@ -3,7 +3,6 @@ const jwt = require('jsonwebtoken');
 
 const SECRET = process.env.JWT_SECRET;
 
-
 if (!SECRET || String(SECRET).trim() === '') {
   console.error('[utils/jwt] FALTA JWT_SECRET en variables de entorno');
   throw new Error('JWT_SECRET no definido');

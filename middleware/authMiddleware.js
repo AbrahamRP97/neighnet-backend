@@ -3,7 +3,6 @@ const { verificarToken } = require('../utils/jwt');
 function authMiddleware(req, res, next) {
   try {
     const rawHeader = req.headers['authorization'] || req.headers['Authorization'];
-
     if (!rawHeader) {
       return res.status(401).json({ error: 'Token no proporcionado' });
     }
@@ -26,6 +25,7 @@ function authMiddleware(req, res, next) {
 
     const decoded = verificarToken(token);
     if (!decoded) {
+      // Log útil (sin exponer el token)
       console.error('[authMiddleware] Token inválido o expirado', {
         hasBearer: /^Bearer\s/i.test(trimmed),
         tokenLen: token.length,
