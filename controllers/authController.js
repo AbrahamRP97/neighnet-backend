@@ -1,4 +1,3 @@
-// authController.js
 require('dotenv').config();
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
@@ -83,15 +82,17 @@ const loginUsuario = async (req, res) => {
     correo: usuario.correo,
     rol: usuario.rol,
   };
-  const token = generarToken(payload); // ← JWT “limpio”
+  const token = generarToken(payload);
 
   res.status(200).json({ message: 'Login exitoso', usuario: payload, token });
 };
 
 // Obtener perfil usuario (protegido)
+// (Cambio mínimo: log detallado si Supabase devuelve error; respuesta sigue siendo 404)
 const obtenerUsuario = async (req, res) => {
   const { id } = req.params;
 
+  // 🔒 Ownership
   if (req.user?.id && String(req.user.id) !== String(id)) {
     return res.status(403).json({ error: 'No autorizado' });
   }
@@ -104,16 +105,41 @@ const obtenerUsuario = async (req, res) => {
 
   if (error || !data) {
     console.error('[obtenerUsuario] Supabase error:', {
+      code: error?.code,
+      message: error?.message,
+      details: error?.details,
+      hint: error?.hint,
+      idConsultado: id,
+      supabaseUrl: process.env.SUPABASE_URL,
+    });
+    return res.status(404).json({ error: 'Usuario no encontrado' });
+  }
+
+  return res.json(data);
+};
+
+// ✅ NUEVO: Obtener perfil desde el token (protegido)
+const obtenerUsuarioMe = async (req, res) => {
+  const id = req.user?.id;
+  if (!id) return res.status(401).json({ error: 'No autorizado' });
+
+  const { data, error } = await supabaseAdmin
+    .from('usuarios')
+    .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at')
+    .eq('id', id)
+    .single();
+
+  if (error || !data) {
+    console.error('[obtenerUsuarioMe] Supabase error:', {
       code: error?.code, message: error?.message, details: error?.details, hint: error?.hint,
-      idConsultado: id, supabaseUrl: process.env.SUPABASE_URL
+      idConsultado: id, supabaseUrl: process.env.SUPABASE_URL,
     });
     return res.status(404).json({ error: 'Usuario no encontrado' });
   }
   return res.json(data);
 };
 
-// Actualizar usuario (protegido)
-// ⬇️⬇️ ÚNICO CAMBIO AQUÍ: soportar remove_avatar:true y foto_url === '' ➜ NULL
+// Actualizar usuario (protegido) — soporta remove_avatar:true y foto_url '' => NULL
 const actualizarUsuario = async (req, res) => {
   const { id } = req.params;
   const { nombre, correo, telefono, numero_casa, foto_url, remove_avatar } = req.body;
@@ -129,13 +155,11 @@ const actualizarUsuario = async (req, res) => {
 
   const updatePayload = { nombre, correo, telefono, numero_casa };
 
-  // ✅ Este bloque garantiza el borrado real en BD:
   if (remove_avatar === true || (typeof foto_url === 'string' && foto_url.trim() === '')) {
     updatePayload.foto_url = null;
   } else if (typeof foto_url === 'string' && foto_url.trim().length > 0) {
     updatePayload.foto_url = foto_url;
   }
-  // ⬆️⬆️ FIN DEL ÚNICO CAMBIO
 
   const { data, error } = await supabaseAdmin
     .from('usuarios')
@@ -226,6 +250,7 @@ const cambiarContrasena = async (req, res) => {
 };
 
 // Forgot password — enviar correo recuperación (pública)
+//El link en el correo aún no funciona, falta implementar en la app
 const forgotPassword = async (req, res) => {
   const { correo } = req.body;
   if (!correo) return res.status(400).json({ error: 'Correo requerido' });
@@ -327,6 +352,7 @@ module.exports = {
   registrarUsuario,
   actualizarUsuario,
   obtenerUsuario,
+  obtenerUsuarioMe,
   eliminarUsuario,
   forgotPassword,
   resetPassword,

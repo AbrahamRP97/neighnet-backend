@@ -4,6 +4,7 @@ const {
   loginUsuario,
   actualizarUsuario,
   obtenerUsuario,
+  obtenerUsuarioMe,
   eliminarUsuario,
   forgotPassword,
   resetPassword,
@@ -21,23 +22,21 @@ const {
 
 const router = express.Router();
 
-
+// ------------------- Rutas públicas -------------------
 router.post('/register', passwordPolicy({ field: 'contrasena' }), registrarUsuario);
 router.post('/login', loginLimiter, loginUsuario);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, passwordPolicy({ field: 'newPassword' }), resetPassword);
 
+// 🔎 DIAGNÓSTICO (temporal, SIN auth): comprueba conexión a Supabase y tabla `usuarios`
 router.get('/diag/ping', async (_req, res) => {
   try {
     const { supabaseAdmin } = require('../supabaseClient');
-
-    // 1) ¿Puedo leer la tabla?
     const { data, error } = await supabaseAdmin
       .from('usuarios')
       .select('id, correo')
       .limit(1);
 
-    // 2) Muestra a qué proyecto estás conectado (prefijos)
     const supabaseUrl = (process.env.SUPABASE_URL || '').slice(0, 40) + '...';
     const servicePrefix = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').slice(0, 12) + '...';
     const anonPrefix = (process.env.SUPABASE_ANON_KEY || '').slice(0, 12) + '...';
@@ -57,9 +56,14 @@ router.get('/diag/ping', async (_req, res) => {
     res.status(500).json({ ok: false, reason: e?.message || String(e) });
   }
 });
+
+// ------------------- Rutas protegidas -------------------
 router.use(authMiddleware);
 
+// Perfil del usuario autenticado (desde token)
+router.get('/me', obtenerUsuarioMe);
 
+// CRUD perfil por id (mantén tus existentes)
 router.put('/update/:id', actualizarUsuario);
 router.get('/:id', obtenerUsuario);
 router.delete('/delete/:id', eliminarUsuario);
