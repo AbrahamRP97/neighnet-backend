@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { supabaseAdmin } = require('../supabaseClient');
+const { sendExpoPush } = require('../utils/notifications');
 
-// Registrar visita (Entrada/Salida con expiración y máximo 2 lecturas)
 const registrarVisita = async (req, res) => {
   try {
     let { id_qr, visitante_id, expires_at } = req.body;
@@ -10,11 +10,11 @@ const registrarVisita = async (req, res) => {
       return res.status(400).json({ error: 'id_qr y visitante_id son obligatorios' });
     }
 
-    // Normalizar
+    
     id_qr = String(id_qr).trim();
     visitante_id = String(visitante_id).trim();
 
-    // Valida expires_at (ISO) — obligatorio para 1ª lectura
+    
     let expiresAtDate = null;
     if (expires_at) {
       expiresAtDate = new Date(expires_at);
@@ -23,7 +23,7 @@ const registrarVisita = async (req, res) => {
       }
     }
 
-    // Buscar registros previos de este QR
+    
     const { data: registros, error: qErr } = await supabaseAdmin
       .from('visitas')
       .select('id, tipo, fecha_hora, expires_at')
@@ -37,7 +37,7 @@ const registrarVisita = async (req, res) => {
 
     const now = new Date();
 
-    // Caso 0: primera lectura -> ENTRADA
+    
     if (!registros || registros.length === 0) {
       if (!expires_at) {
         return res.status(400).json({ error: 'expires_at es obligatorio en la primera lectura' });
@@ -68,11 +68,48 @@ const registrarVisita = async (req, res) => {
         const msg = error?.message || error?.hint || 'Error al registrar entrada';
         return res.status(500).json({ error: msg });
       }
-      // ⬅️ devolvemos la visita creada con su ID para la pantalla de evidencia
+
+      // 🔔 Notificación al RESIDENTE (solo en Entrada)
+      try {
+        
+        const { data: visitante, error: visErr } = await supabaseAdmin
+          .from('visitantes')
+          .select('id, nombre, residente_id')
+          .eq('id', visitante_id)
+          .single();
+
+        if (!visErr && visitante?.residente_id) {
+          
+          const { data: residente, error: usrErr } = await supabaseAdmin
+            .from('usuarios')
+            .select('id, nombre, numero_casa, expo_push_token')
+            .eq('id', visitante.residente_id)
+            .single();
+
+          const pushToken = residente?.expo_push_token;
+          if (pushToken) {
+            const title = 'Tu visitante ha ingresado';
+            const body = `${visitante.nombre} ha ingresado al condominio.`;
+            const dataPayload = {
+              tipo: 'Entrada',
+              visita_id: data.id,
+              visitante_id,
+              id_qr,
+              ts: now.toISOString(),
+            };
+            
+            await sendExpoPush([pushToken], title, body, dataPayload);
+          }
+        }
+      } catch (notifyErr) {
+        console.error('[registrarVisita] notify error:', notifyErr);
+      }
+
+      
       return res.json({ message: 'Entrada registrada', data });
     }
 
-    // Hay al menos una lectura previa; tomamos la primera para leer expires_at guardado
+    
     const primera = registros[0];
     const expServer = primera?.expires_at ? new Date(primera.expires_at) : null;
     if (!expServer || isNaN(expServer.getTime())) {
@@ -109,6 +146,7 @@ const registrarVisita = async (req, res) => {
         console.error('[registrarVisita] insert Salida error:', error, { insertPayload });
         return res.status(500).json({ error: 'Error al registrar salida' });
       }
+      
       return res.json({ message: 'Salida registrada', data });
     }
 

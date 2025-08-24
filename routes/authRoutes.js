@@ -9,6 +9,7 @@ const {
   forgotPassword,
   resetPassword,
   cambiarContrasena,
+  setPushToken
 } = require('../controllers/authController');
 
 const authMiddleware = require('../middleware/authMiddleware');
@@ -133,6 +134,7 @@ router.get('/me', obtenerUsuarioMe);
 router.put('/update/:id', actualizarUsuario);
 router.get('/:id', obtenerUsuario);
 router.delete('/delete/:id', eliminarUsuario);
+router.post('/set-push-token', setPushToken);
 
 router.put(
   '/cambiar-contrasena/:id',

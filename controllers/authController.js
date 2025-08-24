@@ -342,6 +342,29 @@ const resetPassword = async (req, res) => {
 
   res.json({ message: 'Contraseña actualizada' });
 };
+  // Guardar Expo Push Token (protegido)
+  const setPushToken = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { expo_push_token } = req.body || {};
+
+    if (!userId) return res.status(401).json({ error: 'No autenticado' });
+    if (!expo_push_token) return res.status(400).json({ error: 'expo_push_token requerido' });
+
+    const { data, error } = await supabaseAdmin
+      .from('usuarios')
+      .update({ expo_push_token })
+      .eq('id', userId)
+      .select('id, expo_push_token')
+      .single();
+
+    if (error) return res.status(500).json({ error: 'No se pudo guardar el push token' });
+    return res.json({ ok: true, expo_push_token: data.expo_push_token });
+  } catch (e) {
+    console.error('[setPushToken] error:', e);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+};
 
 module.exports = {
   loginUsuario,
@@ -353,4 +376,5 @@ module.exports = {
   forgotPassword,
   resetPassword,
   cambiarContrasena,
+  setPushToken,
 };
