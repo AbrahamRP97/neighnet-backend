@@ -65,7 +65,8 @@ const registrarVisita = async (req, res) => {
 
       if (error) {
         console.error('[registrarVisita] insert Entrada error:', error, { insertPayload });
-        return res.status(500).json({ error: 'Error al registrar entrada' });
+        const msg = error?.message || error?.hint || 'Error al registrar entrada';
+        return res.status(500).json({ error: msg });
       }
       // ⬅️ devolvemos la visita creada con su ID para la pantalla de evidencia
       return res.json({ message: 'Entrada registrada', data });
