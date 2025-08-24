@@ -91,25 +91,20 @@ const loginUsuario = async (req, res) => {
 const obtenerUsuario = async (req, res) => {
   const { id } = req.params;
 
-  // 🔒 Ownership
   if (req.user?.id && String(req.user.id) !== String(id)) {
     return res.status(403).json({ error: 'No autorizado' });
   }
 
   const { data, error } = await supabaseAdmin
     .from('usuarios')
-    .select('*') // ⬅️ CAMBIO: no listar columnas para evitar errores por columnas inexistentes
+    .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at')
     .eq('id', id)
     .single();
 
   if (error || !data) {
     console.error('[obtenerUsuario] Supabase error:', {
-      code: error?.code,
-      message: error?.message,
-      details: error?.details,
-      hint: error?.hint,
-      idConsultado: id,
-      supabaseUrl: process.env.SUPABASE_URL,
+      code: error?.code, message: error?.message, details: error?.details, hint: error?.hint,
+      idConsultado: id, supabaseUrl: process.env.SUPABASE_URL,
     });
     return res.status(404).json({ error: 'Usuario no encontrado' });
   }
@@ -124,7 +119,7 @@ const obtenerUsuarioMe = async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('usuarios')
-    .select('*') // ⬅️ CAMBIO: no listar columnas para evitar errores por columnas inexistentes
+    .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at')
     .eq('id', id)
     .single();
 
@@ -138,18 +133,17 @@ const obtenerUsuarioMe = async (req, res) => {
   return res.json(data);
 };
 
-// Actualizar usuario (protegido) — soporta remove_avatar:true y foto_url '' => NULL
+// Actualizar usuario (protegido)
 const actualizarUsuario = async (req, res) => {
   const { id } = req.params;
   const { nombre, correo, telefono, numero_casa, foto_url, remove_avatar } = req.body;
 
-  // 🔒 Ownership
   if (req.user?.id && String(req.user.id) !== String(id)) {
     return res.status(403).json({ error: 'No autorizado' });
   }
 
-  if (!nombre || !correo || !telefono || !numero_casa) {
-    return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+  if (!nombre || !correo) {
+    return res.status(400).json({ error: 'Nombre y correo son obligatorios' });
   }
 
   const updatePayload = { nombre, correo, telefono, numero_casa };
@@ -167,6 +161,10 @@ const actualizarUsuario = async (req, res) => {
     .select('id, nombre, correo, telefono, numero_casa, foto_url, rol, updated_at');
 
   if (error) {
+    console.error('[actualizarUsuario] Supabase update error:', {
+      code: error.code, message: error.message, details: error.details, hint: error.hint,
+      updatePayload,
+    });
     return res.status(500).json({ error: 'Error al actualizar perfil' });
   }
 
