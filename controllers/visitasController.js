@@ -6,12 +6,11 @@ const registrarVisita = async (req, res) => {
   try {
     let { id_qr, visitante_id, expires_at } = req.body;
 
-    // Validar requeridos (tu regla actual)
     if (!id_qr || !visitante_id) {
       return res.status(400).json({ error: 'id_qr y visitante_id son obligatorios' });
     }
 
-    // Normalizar tipos
+    // Normalizar
     id_qr = String(id_qr).trim();
     visitante_id = String(visitante_id).trim();
 
@@ -24,7 +23,7 @@ const registrarVisita = async (req, res) => {
       }
     }
 
-    // Buscar registros previos de este QR (ordenados por fecha)
+    // Buscar registros previos de este QR
     const { data: registros, error: qErr } = await supabaseAdmin
       .from('visitas')
       .select('id, tipo, fecha_hora, expires_at')
@@ -47,7 +46,6 @@ const registrarVisita = async (req, res) => {
         return res.status(400).json({ error: 'QR expirado' });
       }
 
-      // (Opcional) capturar guardia que escanea
       const guardId = req.user?.id || null;
 
       const insertPayload = {
@@ -69,6 +67,7 @@ const registrarVisita = async (req, res) => {
         console.error('[registrarVisita] insert Entrada error:', error, { insertPayload });
         return res.status(500).json({ error: 'Error al registrar entrada' });
       }
+      // ⬅️ devolvemos la visita creada con su ID para la pantalla de evidencia
       return res.json({ message: 'Entrada registrada', data });
     }
 
@@ -76,7 +75,6 @@ const registrarVisita = async (req, res) => {
     const primera = registros[0];
     const expServer = primera?.expires_at ? new Date(primera.expires_at) : null;
     if (!expServer || isNaN(expServer.getTime())) {
-      // fallback: si no estaba guardado por alguna razón, usar el que mande el cliente (si viene)
       if (!expires_at) {
         return res.status(400).json({ error: 'No se pudo validar expiración del QR' });
       }
@@ -89,10 +87,9 @@ const registrarVisita = async (req, res) => {
       }
     }
 
-    // Caso 1: segunda lectura -> SALIDA (solo si la última fue Entrada y no hay más)
+    // Caso 1: segunda lectura -> SALIDA (si la última fue Entrada)
     if (registros.length === 1 && registros[0].tipo === 'Entrada') {
       const guardId = req.user?.id || null;
-
       const insertPayload = {
         id_qr,
         visitante_id,
@@ -122,4 +119,57 @@ const registrarVisita = async (req, res) => {
   }
 };
 
-module.exports = { registrarVisita };
+/**
+ * PUT /api/vigilancia/visitas/:id/evidencia
+ * Body: { cedula_url?: string, placa_url?: string }
+ * - Solo aplica para visitas de tipo 'Entrada' (la evidencia se adjunta a la entrada).
+ * - Requiere rol vigilancia/admin (ya aplicado en la ruta).
+ */
+const adjuntarEvidencia = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cedula_url, placa_url } = req.body || {};
+
+    if (!id) return res.status(400).json({ error: 'Falta id de la visita' });
+    if (!cedula_url && !placa_url) {
+      return res.status(400).json({ error: 'Debes proporcionar al menos una URL (cedula_url o placa_url)' });
+    }
+
+    // Validar que la visita sea de tipo Entrada
+    const { data: visita, error: getErr } = await supabaseAdmin
+      .from('visitas')
+      .select('id, tipo, cedula_url, placa_url')
+      .eq('id', id)
+      .single();
+
+    if (getErr || !visita) {
+      return res.status(404).json({ error: 'Visita no encontrada' });
+    }
+    if (visita.tipo !== 'Entrada') {
+      return res.status(400).json({ error: 'Solo se puede adjuntar evidencia a visitas de Entrada' });
+    }
+
+    const updates = {};
+    if (typeof cedula_url === 'string') updates.cedula_url = cedula_url;
+    if (typeof placa_url === 'string') updates.placa_url = placa_url;
+
+    const { data, error } = await supabaseAdmin
+      .from('visitas')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[adjuntarEvidencia] update error:', error, { updates, id });
+      return res.status(500).json({ error: 'No se pudo adjuntar la evidencia' });
+    }
+
+    return res.json({ message: 'Evidencia adjuntada', data });
+  } catch (err) {
+    console.error('[adjuntarEvidencia] error:', err);
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+};
+
+module.exports = { registrarVisita, adjuntarEvidencia };

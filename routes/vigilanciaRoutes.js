@@ -1,5 +1,5 @@
 const express = require('express');
-const { registrarVisita } = require('../controllers/visitasController');
+const { registrarVisita, adjuntarEvidencia } = require('../controllers/visitasController');
 const authMiddleware = require('../middleware/authMiddleware');
 const requireRole = require('../middleware/requireRole');
 
@@ -11,5 +11,8 @@ router.use(requireRole('vigilancia', 'admin'));
 
 // Escaneo de QR: Entrada/Salida con expiración y máximo 2 lecturas
 router.post('/scan', registrarVisita);
+
+// Adjuntar evidencia (cedula/placa) a una visita (solo aplica a Entrada)
+router.put('/visitas/:id/evidencia', adjuntarEvidencia);
 
 module.exports = router;
