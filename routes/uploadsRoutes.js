@@ -1,12 +1,13 @@
 const express = require('express');
-const { createSignedUrl } = require('../controllers/uploadsController');
 const authMiddleware = require('../middleware/authMiddleware');
+const { createSignedUrl } = require('../controllers/uploadsController');
 
 const router = express.Router();
 
+// Debe estar autenticado para pedir signed URLs
 router.use(authMiddleware);
 
-// Firmar subida (p. ej., a Supabase S3)
+// POST /api/uploads/signed-url
 router.post('/signed-url', createSignedUrl);
 
 module.exports = router;
