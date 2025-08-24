@@ -1,14 +1,12 @@
 require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const { supabaseAdmin } = require('../supabaseClient');
 
 // Registrar visita (Entrada/Salida con expiración y máximo 2 lecturas)
 const registrarVisita = async (req, res) => {
   try {
     let { id_qr, visitante_id, expires_at } = req.body;
 
-    // Validar requeridos
+    // Validar requeridos (tu regla actual)
     if (!id_qr || !visitante_id) {
       return res.status(400).json({ error: 'id_qr y visitante_id son obligatorios' });
     }
@@ -26,8 +24,8 @@ const registrarVisita = async (req, res) => {
       }
     }
 
-    // Buscar registros previos de este QR
-    const { data: registros, error: qErr } = await supabase
+    // Buscar registros previos de este QR (ordenados por fecha)
+    const { data: registros, error: qErr } = await supabaseAdmin
       .from('visitas')
       .select('id, tipo, fecha_hora, expires_at')
       .eq('id_qr', id_qr)
@@ -49,22 +47,29 @@ const registrarVisita = async (req, res) => {
         return res.status(400).json({ error: 'QR expirado' });
       }
 
-      const { data, error } = await supabase
+      // (Opcional) capturar guardia que escanea
+      const guardId = req.user?.id || null;
+
+      const insertPayload = {
+        id_qr,
+        visitante_id,
+        tipo: 'Entrada',
+        fecha_hora: now.toISOString(),
+        expires_at: expiresAtDate.toISOString(),
+        ...(guardId ? { guard_id: guardId } : {}),
+      };
+
+      const { data, error } = await supabaseAdmin
         .from('visitas')
-        .insert([{
-          id_qr,
-          visitante_id,
-          tipo: 'Entrada',
-          fecha_hora: now.toISOString(),
-          expires_at: expiresAtDate.toISOString(), // guardamos la expiración para validar la 2ª vez
-        }])
-        .select();
+        .insert([insertPayload])
+        .select()
+        .single();
 
       if (error) {
-        console.error('[registrarVisita] insert Entrada error:', error);
+        console.error('[registrarVisita] insert Entrada error:', error, { insertPayload });
         return res.status(500).json({ error: 'Error al registrar entrada' });
       }
-      return res.json({ message: 'Entrada registrada', data: data?.[0] });
+      return res.json({ message: 'Entrada registrada', data });
     }
 
     // Hay al menos una lectura previa; tomamos la primera para leer expires_at guardado
@@ -86,22 +91,27 @@ const registrarVisita = async (req, res) => {
 
     // Caso 1: segunda lectura -> SALIDA (solo si la última fue Entrada y no hay más)
     if (registros.length === 1 && registros[0].tipo === 'Entrada') {
-      const { data, error } = await supabase
+      const guardId = req.user?.id || null;
+
+      const insertPayload = {
+        id_qr,
+        visitante_id,
+        tipo: 'Salida',
+        fecha_hora: now.toISOString(),
+        ...(guardId ? { guard_id: guardId } : {}),
+      };
+
+      const { data, error } = await supabaseAdmin
         .from('visitas')
-        .insert([{
-          id_qr,
-          visitante_id,
-          tipo: 'Salida',
-          fecha_hora: now.toISOString(),
-          // no necesitamos volver a guardar expires_at en la segunda fila, pero puedes incluirlo si quieres
-        }])
-        .select();
+        .insert([insertPayload])
+        .select()
+        .single();
 
       if (error) {
-        console.error('[registrarVisita] insert Salida error:', error);
+        console.error('[registrarVisita] insert Salida error:', error, { insertPayload });
         return res.status(500).json({ error: 'Error al registrar salida' });
       }
-      return res.json({ message: 'Salida registrada', data: data?.[0] });
+      return res.json({ message: 'Salida registrada', data });
     }
 
     // Caso 2: tercera lectura o patrón inválido -> error
