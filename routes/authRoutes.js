@@ -9,10 +9,12 @@ const {
   forgotPassword,
   resetPassword,
   cambiarContrasena,
-  setPushToken
+  setPushToken,
+  sendPhoneCode,
+  verifyPhoneCode,
 } = require('../controllers/authController');
 
-const { obtenerUsuarioPublico } = require('../controllers/authPublicController'); // 👈 NUEVO
+const { obtenerUsuarioPublico } = require('../controllers/authPublicController');
 const authMiddleware = require('../middleware/authMiddleware');
 const passwordPolicy = require('../middleware/passwordPolicy');
 const {
@@ -20,6 +22,8 @@ const {
   forgotPasswordLimiter,
   resetPasswordLimiter,
   changePasswordLimiter,
+  phoneCodeLimiter,
+  phoneVerifyLimiter,
 } = require('../middleware/rateLimiters');
 
 const { verificarToken } = require('../utils/jwt');
@@ -31,6 +35,10 @@ router.post('/register', passwordPolicy({ field: 'contrasena' }), registrarUsuar
 router.post('/login', loginLimiter, loginUsuario);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, passwordPolicy({ field: 'newPassword' }), resetPassword);
+
+// Envío y verificación de código SMS (públicas)
+router.post('/phone/send-code', phoneCodeLimiter, sendPhoneCode);
+router.post('/phone/verify', phoneVerifyLimiter, verifyPhoneCode);
 
 // 🔎 DIAGNÓSTICO (SIN auth): conexión a Supabase/tabla `usuarios`
 router.get('/diag/ping', async (_req, res) => {

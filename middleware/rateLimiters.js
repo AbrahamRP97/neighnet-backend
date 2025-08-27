@@ -8,8 +8,8 @@ const toResponse = (message = 'Demasiadas solicitudes, intenta más tarde.') => 
 
 // 1) Limita intentos de login por IP
 const loginLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutos
-  max: 10,                  // 10 intentos cada 10 min
+  windowMs: 10 * 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: toResponse('Demasiados intentos de inicio de sesión. Intenta de nuevo en unos minutos.'),
@@ -17,8 +17,8 @@ const loginLimiter = rateLimit({
 
 // 2) Limita solicitudes de envío de correo de recuperación
 const forgotPasswordLimiter = rateLimit({
-  windowMs: 30 * 60 * 1000, // 30 minutos
-  max: 5,                   // 5 correos cada 30 min
+  windowMs: 30 * 60 * 1000,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
   message: toResponse('Has solicitado recuperación muchas veces. Vuelve a intentar más tarde.'),
@@ -42,9 +42,29 @@ const changePasswordLimiter = rateLimit({
   message: toResponse('Demasiados intentos de cambio de contraseña. Intenta luego.'),
 });
 
+// 5) Limita envío de código SMS
+const phoneCodeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 5, // 5 envíos cada 15 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: toResponse('Has solicitado demasiados códigos. Intenta más tarde.'),
+});
+
+// 6) Limita verificación de código SMS
+const phoneVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // 10 intentos cada 15 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: toResponse('Demasiados intentos de verificación. Inténtalo luego.'),
+});
+
 module.exports = {
   loginLimiter,
   forgotPasswordLimiter,
   resetPasswordLimiter,
   changePasswordLimiter,
+  phoneCodeLimiter,
+  phoneVerifyLimiter,
 };

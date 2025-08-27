@@ -5,6 +5,36 @@ const bcrypt = require('bcryptjs');
 const { generarToken } = require('../utils/jwt');
 const { supabaseAdmin } = require('../supabaseClient');
 
+// Twilio helpers
+const { sendVerifyCode, checkVerifyCode } = require('../services/twilio');
+
+// --- Helpers ---
+const normalizePhone = (raw) => {
+  // Solo acepta números de Honduras (+504XXXXXXXX) y USA (+1XXXXXXXXXX)
+  const cleaned = (raw || '').replace(/\D/g, '');
+
+  // Honduras: 8 dígitos, debe empezar con +504
+  if (cleaned.length === 8) {
+    return `+504${cleaned}`;
+  }
+  if (cleaned.length === 11 && cleaned.startsWith('504')) {
+    return `+${cleaned}`;
+  }
+  // USA: 10 dígitos, debe empezar con +1
+  if (cleaned.length === 10) {
+    return `+1${cleaned}`;
+  }
+  if (cleaned.length === 11 && cleaned.startsWith('1')) {
+    return `+${cleaned}`;
+  }
+  // Si ya viene en formato correcto
+  if (/^\+504\d{8}$/.test(raw) || /^\+1\d{10}$/.test(raw)) {
+    return raw;
+  }
+  // Si no cumple, retorna vacío
+  return '';
+};
+
 // Registrar usuario
 const registrarUsuario = async (req, res) => {
   const { nombre, correo, contrasena, telefono, numero_casa } = req.body;
@@ -24,11 +54,15 @@ const registrarUsuario = async (req, res) => {
   }
 
   const hash = await bcrypt.hash(contrasena, 10);
+  const telefono_e164 = normalizePhone(telefono);
+
   const insertPayload = {
     nombre,
     correo,
     contrasena: hash,
     telefono,
+    telefono_e164,
+    telefono_verificado: false,
     numero_casa,
     rol: 'residente',
   };
@@ -43,15 +77,26 @@ const registrarUsuario = async (req, res) => {
   }
 
   const usuario = data[0];
-  const payload = {
-    id: usuario.id,
-    nombre: usuario.nombre,
-    correo: usuario.correo,
-    rol: usuario.rol,
-  };
+
+  // Intenta enviar código SMS (no detiene el registro si falla)
+  try {
+    if (usuario.telefono_e164 || usuario.telefono) {
+      await sendVerifyCode(usuario.telefono_e164 || usuario.telefono);
+    }
+  } catch (e) {
+    console.error('[sendVerifyCode @register] error:', e?.message || e);
+  }
+
+  const payload = { id: usuario.id, nombre: usuario.nombre, correo: usuario.correo, rol: usuario.rol };
   const token = generarToken(payload);
 
-  res.status(201).json({ message: 'Usuario registrado correctamente', usuario: payload, token });
+  // Puedes devolver token como antes; el frontend decidirá flujo (verificación antes de entrar).
+  res.status(201).json({
+    message: 'Usuario registrado correctamente. Verifica tu teléfono por SMS.',
+    usuario: payload,
+    token,
+    needPhoneVerify: true,
+  });
 };
 
 // Login usuario
@@ -76,12 +121,17 @@ const loginUsuario = async (req, res) => {
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
 
-  const payload = {
-    id: usuario.id,
-    nombre: usuario.nombre,
-    correo: usuario.correo,
-    rol: usuario.rol,
-  };
+  // Bloquear si no ha verificado teléfono
+  if (!usuario.telefono_verificado) {
+    return res.status(403).json({
+      error: 'Teléfono no verificado. Ingresa el código enviado por SMS.',
+      needPhoneVerify: true,
+      userId: usuario.id,
+      telefono: usuario.telefono_e164 || usuario.telefono || null,
+    });
+  }
+
+  const payload = { id: usuario.id, nombre: usuario.nombre, correo: usuario.correo, rol: usuario.rol };
   const token = generarToken(payload);
 
   res.status(200).json({ message: 'Login exitoso', usuario: payload, token });
@@ -148,6 +198,10 @@ const actualizarUsuario = async (req, res) => {
 
   const updatePayload = { nombre, correo, telefono, numero_casa };
 
+  if (typeof telefono === 'string') {
+    updatePayload.telefono_e164 = normalizePhone(telefono);
+  }
+
   if (remove_avatar === true || (typeof foto_url === 'string' && foto_url.trim() === '')) {
     updatePayload.foto_url = null;
   } else if (typeof foto_url === 'string' && foto_url.trim().length > 0) {
@@ -184,10 +238,7 @@ const eliminarUsuario = async (req, res) => {
     await supabaseAdmin.from('visitantes').delete().eq('usuario_id', id);
     await supabaseAdmin.from('posts').delete().eq('user_id', id);
 
-    const { error } = await supabaseAdmin
-      .from('usuarios')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabaseAdmin.from('usuarios').delete().eq('id', id);
 
     if (error) {
       return res.status(500).json({ error: 'Error al eliminar la cuenta' });
@@ -335,15 +386,13 @@ const resetPassword = async (req, res) => {
     return res.status(500).json({ error: 'No se pudo actualizar la contraseña' });
   }
 
-  await supabaseAdmin
-    .from('password_resets')
-    .delete()
-    .eq('token', token);
+  await supabaseAdmin.from('password_resets').delete().eq('token', token);
 
   res.json({ message: 'Contraseña actualizada' });
 };
-  // Guardar Expo Push Token (protegido)
-  const setPushToken = async (req, res) => {
+
+// Guardar Expo Push Token (protegido)
+const setPushToken = async (req, res) => {
   try {
     const userId = req.user?.id;
     const { expo_push_token } = req.body || {};
@@ -366,6 +415,66 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// --- Enviar y Verificar código SMS ---
+const sendPhoneCode = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId requerido' });
+
+    const { data: user, error } = await supabaseAdmin
+      .from('usuarios')
+      .select('telefono, telefono_e164, telefono_verificado')
+      .eq('id', userId)
+      .single();
+
+    if (error || !user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (user.telefono_verificado) return res.status(400).json({ error: 'Teléfono ya verificado' });
+
+    const phone = user.telefono_e164 || user.telefono;
+    if (!phone) return res.status(400).json({ error: 'Teléfono no definido' });
+
+    await sendVerifyCode(phone);
+    return res.json({ ok: true, message: 'Código enviado' });
+  } catch (e) {
+    console.error('[sendPhoneCode] error:', e?.message || e);
+    return res.status(500).json({ error: 'No se pudo enviar el código' });
+  }
+};
+
+const verifyPhoneCode = async (req, res) => {
+  try {
+    const { userId, code } = req.body;
+    if (!userId || !code) return res.status(400).json({ error: 'userId y code requeridos' });
+
+    const { data: user, error } = await supabaseAdmin
+      .from('usuarios')
+      .select('telefono, telefono_e164, telefono_verificado')
+      .eq('id', userId)
+      .single();
+
+    if (error || !user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (user.telefono_verificado) return res.status(400).json({ error: 'Teléfono ya verificado' });
+
+    const phone = user.telefono_e164 || user.telefono;
+    if (!phone) return res.status(400).json({ error: 'Teléfono no definido' });
+
+    const result = await checkVerifyCode(phone, code);
+    if (result.status === 'approved') {
+      await supabaseAdmin
+        .from('usuarios')
+        .update({ telefono_verificado: true, verificado_en: new Date().toISOString() })
+        .eq('id', userId);
+
+      return res.json({ ok: true, message: 'Teléfono verificado' });
+    } else {
+      return res.status(400).json({ error: 'Código inválido o expirado' });
+    }
+  } catch (e) {
+    console.error('[verifyPhoneCode] error:', e?.message || e);
+    return res.status(500).json({ error: 'No se pudo verificar el código' });
+  }
+};
+
 module.exports = {
   loginUsuario,
   registrarUsuario,
@@ -377,4 +486,6 @@ module.exports = {
   resetPassword,
   cambiarContrasena,
   setPushToken,
+  sendPhoneCode,
+  verifyPhoneCode,
 };
