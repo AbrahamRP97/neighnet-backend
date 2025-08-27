@@ -121,19 +121,28 @@ const loginUsuario = async (req, res) => {
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
 
-  // Bloquear si no ha verificado teléfono
+  // si no está verificado, enviamos código y devolvemos 403
   if (!usuario.telefono_verificado) {
+    const phone = usuario.telefono_e164 || usuario.telefono || null;
+    if (phone) {
+      try {
+        await sendVerifyCode(phone);
+      } catch (e) {
+        console.error('[loginUsuario/sendVerifyCode] ', e?.message || e);
+      }
+    }
+
     return res.status(403).json({
       error: 'Teléfono no verificado. Ingresa el código enviado por SMS.',
       needPhoneVerify: true,
       userId: usuario.id,
-      telefono: usuario.telefono_e164 || usuario.telefono || null,
+      telefono: phone,
+      sent: !!phone, // hint para el frontend
     });
   }
 
   const payload = { id: usuario.id, nombre: usuario.nombre, correo: usuario.correo, rol: usuario.rol };
   const token = generarToken(payload);
-
   res.status(200).json({ message: 'Login exitoso', usuario: payload, token });
 };
 
