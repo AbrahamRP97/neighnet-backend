@@ -12,6 +12,7 @@ const {
   setPushToken
 } = require('../controllers/authController');
 
+const { obtenerUsuarioPublico } = require('../controllers/authPublicController'); // 👈 NUEVO
 const authMiddleware = require('../middleware/authMiddleware');
 const passwordPolicy = require('../middleware/passwordPolicy');
 const {
@@ -123,6 +124,9 @@ router.get('/diag/lookup', async (req, res) => {
     res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
 });
+
+// Público (limitado): ver perfil básico de otro usuario
+router.get('/public/:id', obtenerUsuarioPublico);
 
 // ------------------- Rutas protegidas -------------------
 router.use(authMiddleware);
