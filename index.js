@@ -12,6 +12,7 @@ const postRoutes = require('./routes/postRoutes');
 const vigilanciaRoutes = require('./routes/vigilanciaRoutes');
 const visitantesRoutes = require('./routes/visitantesRoutes');
 const uploadsRoutes = require('./routes/uploadsRoutes');
+const passesRoutes = require('./routes/passesRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +53,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/vigilancia', vigilanciaRoutes);
 app.use('/api/visitantes', visitantesRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/passes', passesRoutes);
 
 app.use((req, res, _next) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

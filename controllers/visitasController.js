@@ -1,6 +1,8 @@
 require('dotenv').config();
 const { supabaseAdmin } = require('../supabaseClient');
 const { sendExpoPush } = require('../utils/notifications');
+const { jwtVerify, createLocalJWKSet } = require('jose');
+const { ALG, getPublicJwk } = require('../utils/qrSigningKeys');
 
 const registrarVisita = async (req, res) => {
   try {
@@ -211,4 +213,45 @@ const adjuntarEvidencia = async (req, res) => {
   }
 };
 
-module.exports = { registrarVisita, adjuntarEvidencia };
+/**
+ * POST /api/vigilancia/scan-signed
+ * Body: { envelope: string }
+ * Auth: vigilancia | admin
+ * Comportamiento: igual que registrarVisita, pero toma id_qr/visitante_id/exp del sobre firmado
+ */
+const scanSigned = async (req, res) => {
+  try {
+    const { envelope } = req.body || {};
+    if (!envelope) return res.status(400).json({ error: 'Falta envelope' });
+
+    const pubJwk = getPublicJwk();
+    const JWKS = createLocalJWKSet({ keys: [pubJwk] });
+
+    const { payload } = await jwtVerify(envelope, JWKS, {
+      issuer: 'neighnet',
+      audience: 'vigilancia',
+      algorithms: [ALG],
+    });
+
+    // Extrae datos del payload
+    const id_qr = String(payload?.id_qr || '');
+    const visitante_id = String(payload?.visitante_id || '');
+    const expSec = Number(payload?.exp || 0);
+
+    if (!id_qr || !visitante_id || !expSec) {
+      return res.status(400).json({ error: 'Envelope incompleto' });
+    }
+
+    // Reusa la lógica de registrarVisita, pero usando los datos del sobre:
+    const expires_at = new Date(expSec * 1000).toISOString();
+    req.body = { id_qr, visitante_id, expires_at };
+
+    // Puedes llamar directamente a la función existente:
+    return registrarVisita(req, res);
+  } catch (err) {
+    console.error('[scanSigned] error:', err);
+    return res.status(400).json({ error: 'QR inválido/utilizado/expirado' });
+  }
+};
+
+module.exports = { registrarVisita, adjuntarEvidencia, scanSigned };
