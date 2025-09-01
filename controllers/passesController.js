@@ -1,12 +1,10 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const { SignJWT } = require('jose');
 const { supabaseAdmin } = require('../supabaseClient');
 const { ALG, getPrivateKey, getPublicJwk } = require('../utils/qrSigningKeys');
 
-const randomId = (len = 8) =>
-  [...crypto.getRandomValues(new Uint8Array(len))]
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+const randomId = (len = 4) => crypto.randomBytes(len).toString('hex');
 
 /**
  * POST /api/passes
@@ -27,7 +25,7 @@ const createSignedPass = async (req, res) => {
     // Verifica que el visitante pertenezca al residente autenticado
     const { data: visitante, error: visErr } = await supabaseAdmin
       .from('visitantes')
-      .select('id, residente_id')
+      .select('id, residente_id, nombre')
       .eq('id', visitante_id)
       .single();
 
@@ -35,20 +33,22 @@ const createSignedPass = async (req, res) => {
     if (visitante.residente_id !== userId) return res.status(403).json({ error: 'No autorizado' });
 
     const nowSec = Math.floor(Date.now() / 1000);
-    const expSec = nowSec + Math.max(1, Math.min(72, Number(ttl_hours))) * 3600;
+    const ttl = Math.max(1, Math.min(72, Number(ttl_hours))) * 3600;
+    const expSec = nowSec + ttl;
 
-    const id_qr = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const id_qr = crypto.randomUUID();
     const nonce = randomId(4);
 
     const payload = {
+      v: 2,
       id_qr,
       visitante_id: String(visitante_id),
+      iss: 'neighnet',
+      aud: 'vigilancia',
       iat: nowSec,
       exp: expSec,
       nonce,
-      iss: 'neighnet',
-      aud: 'vigilancia',
-      meta,
+      meta: { visitante_nombre: visitante.nombre, ...meta },
     };
 
     const privKey = await getPrivateKey();
