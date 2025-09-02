@@ -3,24 +3,33 @@ const { supabaseAdmin } = require('../supabaseClient');
 
 /**
  * GET /api/admin/residentes?q=texto
- * Devuelve lista de residentes para el selector (id, nombre, numero_casa, correo)
+ * Respuesta: { items: [{ id, nombre, numero_casa, correo }] }
  */
 const buscarResidentes = async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
+
     let query = supabaseAdmin
       .from('usuarios')
-      .select('id, nombre, numero_casa, correo, role')
-      .eq('role', 'residente')
-      .order('nombre', { ascending: true });
+      .select('id, nombre, numero_casa, correo, rol')
+      .eq('rol', 'residente')           // ✅ usa columna 'rol'
+      .order('nombre', { ascending: true })
+      .limit(100);
 
     if (q) {
-      // Busca por nombre o correo
-      query = query.ilike('nombre', `%${q}%`);
+      const isNum = /^\d+$/.test(q);
+      // nombre o correo, y si es número, también por número de casa exacto
+      const orFilter = isNum
+        ? `nombre.ilike.%${q}%,correo.ilike.%${q}%,numero_casa.eq.${q}`
+        : `nombre.ilike.%${q}%,correo.ilike.%${q}%`;
+      query = query.or(orFilter);
     }
 
     const { data, error } = await query;
-    if (error) return res.status(500).json({ error: 'No se pudieron listar residentes' });
+    if (error) {
+      console.error('[buscarResidentes] supabase error:', error);
+      return res.status(500).json({ error: 'No se pudieron listar residentes' });
+    }
     return res.json({ items: data || [] });
   } catch (err) {
     console.error('[buscarResidentes] error:', err);
@@ -48,15 +57,15 @@ const crearVisitanteParaResidente = async (req, res) => {
       return res.status(400).json({ error: 'Todos los campos son obligatorios' });
     }
 
-    // Valida que el residente exista y sea residente
+    // Valida que el residente exista y tenga rol 'residente'
     const { data: residente, error: resErr } = await supabaseAdmin
       .from('usuarios')
-      .select('id, role')
+      .select('id, rol')
       .eq('id', residente_id)
       .single();
 
     if (resErr || !residente) return res.status(404).json({ error: 'Residente no encontrado' });
-    if (residente.role !== 'residente') return res.status(400).json({ error: 'El usuario no es residente' });
+    if (residente.rol !== 'residente') return res.status(400).json({ error: 'El usuario no es residente' });
 
     const payload = {
       residente_id,
@@ -74,7 +83,10 @@ const crearVisitanteParaResidente = async (req, res) => {
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: 'No se pudo crear el visitante' });
+    if (error) {
+      console.error('[crearVisitanteParaResidente] supabase error:', error);
+      return res.status(500).json({ error: 'No se pudo crear el visitante' });
+    }
     return res.status(201).json(data);
   } catch (err) {
     console.error('[crearVisitanteParaResidente] error:', err);
@@ -84,7 +96,7 @@ const crearVisitanteParaResidente = async (req, res) => {
 
 /**
  * GET /api/admin/visitas?from=&to=&estado=(all|pending|complete)&limit=100
- * Devuelve visitas con evidencia y estado (para AdminVisitsScreen)
+ * Respuesta: { items: [...] }
  */
 const listarVisitasAdmin = async (req, res) => {
   try {
@@ -102,27 +114,32 @@ const listarVisitasAdmin = async (req, res) => {
       .limit(Number(limit) || 100);
 
     if (from) query = query.gte('fecha_hora', from);
-    if (to) query = query.lte('fecha_hora', to);
+    if (to)   query = query.lte('fecha_hora', to);
 
     const { data, error } = await query;
-    if (error) return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
+    if (error) {
+      console.error('[listarVisitasAdmin] supabase error:', error);
+      return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
+    }
 
-    const items = (data || []).map(v => {
-      let evidence_status = 'n/a';
-      if (v.tipo === 'Entrada') {
-        const hasCed = !!v.cedula_url;
-        const hasPla = !!v.placa_url;
-        if (hasCed && hasPla) evidence_status = 'complete';
-        else if (!hasCed && !hasPla) evidence_status = 'pending';
-        else evidence_status = !hasCed ? 'missing_cedula' : 'missing_placa';
-      }
-      return { ...v, evidence_status };
-    }).filter(it => {
-      if (estado === 'all') return true;
-      if (estado === 'complete') return it.evidence_status === 'complete';
-      if (estado === 'pending') return it.evidence_status !== 'complete';
-      return true;
-    });
+    const items = (data || [])
+      .map(v => {
+        let evidence_status = 'n/a';
+        if (v.tipo === 'Entrada') {
+          const hasCed = !!v.cedula_url;
+          const hasPla = !!v.placa_url;
+          if (hasCed && hasPla) evidence_status = 'complete';
+          else if (!hasCed && !hasPla) evidence_status = 'pending';
+          else evidence_status = !hasCed ? 'missing_cedula' : 'missing_placa';
+        }
+        return { ...v, evidence_status };
+      })
+      .filter(it => {
+        if (estado === 'all') return true;
+        if (estado === 'complete') return it.evidence_status === 'complete';
+        if (estado === 'pending') return it.evidence_status !== 'complete';
+        return true;
+      });
 
     return res.json({ items });
   } catch (err) {

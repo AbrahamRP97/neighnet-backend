@@ -10,7 +10,7 @@ const {
 const router = express.Router();
 
 router.use(authMiddleware);
-router.use(requireRole('admin')); // <- SOLO admin
+router.use(requireRole('admin')); // SOLO admin
 
 // Buscar residentes para selector (q = texto a buscar)
 router.get('/residentes', buscarResidentes);
@@ -18,7 +18,7 @@ router.get('/residentes', buscarResidentes);
 // Crear visitante asignándolo a un residente específico
 router.post('/visitantes', crearVisitanteParaResidente);
 
-// (Opcional) Listado admin de visitas con evidencia (lo usa tu AdminVisitsScreen)
+// Listado admin de visitas con evidencia (lo usa AdminVisitsScreen)
 router.get('/visitas', listarVisitasAdmin);
 
 module.exports = router;
