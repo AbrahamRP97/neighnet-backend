@@ -1,15 +1,24 @@
 const express = require('express');
-const requireRole = require('../middleware/requireRole');
 const authMiddleware = require('../middleware/authMiddleware');
-const { listVisitsAdmin } = require('../controllers/adminController');
+const requireRole = require('../middleware/requireRole');
+const {
+  buscarResidentes,
+  crearVisitanteParaResidente,
+  listarVisitasAdmin
+} = require('../controllers/adminController');
 
 const router = express.Router();
 
-// Autenticado + solo admin
 router.use(authMiddleware);
-router.use(requireRole('admin'));
+router.use(requireRole('admin')); // <- SOLO admin
 
-// Listado de visitas con filtros y estado de evidencia
-router.get('/visitas', listVisitsAdmin);
+// Buscar residentes para selector (q = texto a buscar)
+router.get('/residentes', buscarResidentes);
+
+// Crear visitante asignándolo a un residente específico
+router.post('/visitantes', crearVisitanteParaResidente);
+
+// (Opcional) Listado admin de visitas con evidencia (lo usa tu AdminVisitsScreen)
+router.get('/visitas', listarVisitasAdmin);
 
 module.exports = router;

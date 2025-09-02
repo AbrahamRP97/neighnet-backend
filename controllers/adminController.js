@@ -1,119 +1,134 @@
 require('dotenv').config();
 const { supabaseAdmin } = require('../supabaseClient');
 
-const evidenceStatus = (row) => {
-  const hasCed = !!row.cedula_url;
-  const hasPl = !!row.placa_url;
-  if (row.tipo !== 'Entrada') return 'n/a';
-  if (hasCed && hasPl) return 'complete';
-  if (hasCed && !hasPl) return 'missing_placa';
-  if (!hasCed && hasPl) return 'missing_cedula';
-  return 'pending';
-};
-
-// GET /api/admin/visitas?from=YYYY-MM-DD&to=YYYY-MM-DD&estado=pending|complete|all&limit=50&offset=0
-const listVisitsAdmin = async (req, res) => {
+/**
+ * GET /api/admin/residentes?q=texto
+ * Devuelve lista de residentes para el selector (id, nombre, numero_casa, correo)
+ */
+const buscarResidentes = async (req, res) => {
   try {
-    const {
-      from,
-      to,
-      estado = 'all',
-      limit = 50,
-      offset = 0,
-      order = 'desc',
-    } = req.query;
+    const q = (req.query.q || '').trim();
+    let query = supabaseAdmin
+      .from('usuarios')
+      .select('id, nombre, numero_casa, correo, role')
+      .eq('role', 'residente')
+      .order('nombre', { ascending: true });
 
-    let q = supabaseAdmin
-      .from('visitas')
-      .select('id, id_qr, visitante_id, guard_id, tipo, fecha_hora, expires_at, cedula_url, placa_url', { count: 'exact' });
-
-    if (from) q = q.gte('fecha_hora', new Date(from).toISOString());
-    if (to)   q = q.lte('fecha_hora', new Date(to).toISOString());
-
-    q = q.order('fecha_hora', { ascending: order === 'asc' }).range(Number(offset), Number(offset) + Number(limit) - 1);
-
-    const { data: rows, error, count } = await q;
-    if (error) {
-      console.error('[listVisitsAdmin] query error:', error);
-      return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
+    if (q) {
+      // Busca por nombre o correo
+      query = query.ilike('nombre', `%${q}%`);
     }
 
-    // Ids para joins manuales
-    const visitanteIds = [...new Set((rows || []).map(r => r.visitante_id).filter(Boolean))];
-    const guardIds     = [...new Set((rows || []).map(r => r.guard_id).filter(Boolean))];
-
-    // Cargar visitantes (trae residente_id para luego traer al residente)
-    let residentesIds = [];
-    let visitantesMap = {};
-    if (visitanteIds.length) {
-      const { data: visitantes, error: vErr } = await supabaseAdmin
-        .from('visitantes')
-        .select('id, nombre, residente_id')
-        .in('id', visitanteIds);
-
-      if (vErr) {
-        console.error('[listVisitsAdmin] visitantes error:', vErr);
-      } else {
-        visitantesMap = Object.fromEntries((visitantes || []).map(v => [String(v.id), v]));
-        residentesIds = [...new Set((visitantes || []).map(v => v.residente_id).filter(Boolean))];
-      }
-    }
-
-    // Cargar guardias (usuarios)
-    let guardsMap = {};
-    if (guardIds.length) {
-      const { data: guards, error: gErr } = await supabaseAdmin
-        .from('usuarios')
-        .select('id, nombre')
-        .in('id', guardIds);
-
-      if (gErr) console.error('[listVisitsAdmin] guards error:', gErr);
-      else guardsMap = Object.fromEntries((guards || []).map(u => [String(u.id), u]));
-    }
-
-    // Cargar residentes (usuarios)
-    let residentesMap = {};
-    if (residentesIds.length) {
-      const { data: residentes, error: rErr } = await supabaseAdmin
-        .from('usuarios')
-        .select('id, nombre, numero_casa')
-        .in('id', residentesIds);
-
-      if (rErr) console.error('[listVisitsAdmin] residentes error:', rErr);
-      else residentesMap = Object.fromEntries((residentes || []).map(u => [String(u.id), u]));
-    }
-
-    // Componer respuesta + filtrar por estado de evidencia si aplica
-    let items = (rows || []).map(row => {
-      const visitante = visitantesMap[String(row.visitante_id)] || null;
-      const residente = visitante ? (residentesMap[String(visitante.residente_id)] || null) : null;
-      const guard     = row.guard_id ? (guardsMap[String(row.guard_id)] || null) : null;
-
-      const evStatus  = evidenceStatus(row);
-
-      return {
-        ...row,
-        evidence_status: evStatus,
-        visitante: visitante ? { id: visitante.id, nombre: visitante.nombre } : null,
-        residente: residente ? { id: residente.id, nombre: residente.nombre, numero_casa: residente.numero_casa } : null,
-        guard:     guard ? { id: guard.id, nombre: guard.nombre } : null,
-      };
-    });
-
-    if (estado === 'pending') {
-      items = items.filter(i => i.tipo === 'Entrada' && (i.evidence_status === 'pending' || i.evidence_status === 'missing_cedula' || i.evidence_status === 'missing_placa'));
-    } else if (estado === 'complete') {
-      items = items.filter(i => i.tipo === 'Entrada' && i.evidence_status === 'complete');
-    }
-
-    return res.json({
-      total: count ?? items.length,
-      items,
-    });
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error: 'No se pudieron listar residentes' });
+    return res.json({ items: data || [] });
   } catch (err) {
-    console.error('[listVisitsAdmin] error:', err);
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('[buscarResidentes] error:', err);
+    return res.status(500).json({ error: 'Error interno' });
   }
 };
 
-module.exports = { listVisitsAdmin };
+/**
+ * POST /api/admin/visitantes
+ * Body: { residente_id, nombre, identidad, placa, marca_vehiculo, modelo_vehiculo, color_vehiculo }
+ */
+const crearVisitanteParaResidente = async (req, res) => {
+  try {
+    const {
+      residente_id,
+      nombre,
+      identidad,
+      placa,
+      marca_vehiculo,
+      modelo_vehiculo,
+      color_vehiculo,
+    } = req.body || {};
+
+    if (!residente_id || !nombre || !identidad || !placa || !marca_vehiculo || !modelo_vehiculo || !color_vehiculo) {
+      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+    }
+
+    // Valida que el residente exista y sea residente
+    const { data: residente, error: resErr } = await supabaseAdmin
+      .from('usuarios')
+      .select('id, role')
+      .eq('id', residente_id)
+      .single();
+
+    if (resErr || !residente) return res.status(404).json({ error: 'Residente no encontrado' });
+    if (residente.role !== 'residente') return res.status(400).json({ error: 'El usuario no es residente' });
+
+    const payload = {
+      residente_id,
+      nombre,
+      identidad,
+      placa,
+      marca_vehiculo,
+      modelo_vehiculo,
+      color_vehiculo,
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('visitantes')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: 'No se pudo crear el visitante' });
+    return res.status(201).json(data);
+  } catch (err) {
+    console.error('[crearVisitanteParaResidente] error:', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+};
+
+/**
+ * GET /api/admin/visitas?from=&to=&estado=(all|pending|complete)&limit=100
+ * Devuelve visitas con evidencia y estado (para AdminVisitsScreen)
+ */
+const listarVisitasAdmin = async (req, res) => {
+  try {
+    const { from, to, estado = 'all', limit = '100' } = req.query;
+
+    let query = supabaseAdmin
+      .from('visitas')
+      .select(`
+        id, id_qr, visitante_id, guard_id, tipo, fecha_hora, expires_at, cedula_url, placa_url,
+        visitante:visitantes(id, nombre, residente_id),
+        guard:usuarios!visitas_guard_id_fkey(id, nombre),
+        residente:usuarios!visitantes_residente_id_fkey(id, nombre, numero_casa)
+      `)
+      .order('fecha_hora', { ascending: false })
+      .limit(Number(limit) || 100);
+
+    if (from) query = query.gte('fecha_hora', from);
+    if (to) query = query.lte('fecha_hora', to);
+
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
+
+    const items = (data || []).map(v => {
+      let evidence_status = 'n/a';
+      if (v.tipo === 'Entrada') {
+        const hasCed = !!v.cedula_url;
+        const hasPla = !!v.placa_url;
+        if (hasCed && hasPla) evidence_status = 'complete';
+        else if (!hasCed && !hasPla) evidence_status = 'pending';
+        else evidence_status = !hasCed ? 'missing_cedula' : 'missing_placa';
+      }
+      return { ...v, evidence_status };
+    }).filter(it => {
+      if (estado === 'all') return true;
+      if (estado === 'complete') return it.evidence_status === 'complete';
+      if (estado === 'pending') return it.evidence_status !== 'complete';
+      return true;
+    });
+
+    return res.json({ items });
+  } catch (err) {
+    console.error('[listarVisitasAdmin] error:', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+};
+
+module.exports = { buscarResidentes, crearVisitanteParaResidente, listarVisitasAdmin };
