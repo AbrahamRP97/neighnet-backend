@@ -12,13 +12,12 @@ const buscarResidentes = async (req, res) => {
     let query = supabaseAdmin
       .from('usuarios')
       .select('id, nombre, numero_casa, correo, rol')
-      .eq('rol', 'residente')           // ✅ usa columna 'rol'
+      .eq('rol', 'residente')
       .order('nombre', { ascending: true })
       .limit(100);
 
     if (q) {
       const isNum = /^\d+$/.test(q);
-      // nombre o correo, y si es número, también por número de casa exacto
       const orFilter = isNum
         ? `nombre.ilike.%${q}%,correo.ilike.%${q}%,numero_casa.eq.${q}`
         : `nombre.ilike.%${q}%,correo.ilike.%${q}%`;
@@ -102,28 +101,36 @@ const listarVisitasAdmin = async (req, res) => {
   try {
     const { from, to, estado = 'all', limit = '100' } = req.query;
 
-    let query = supabaseAdmin
+    // ✅ Hacemos el join del residente DENTRO de visitante (donde vive la FK)
+    const { data, error } = await supabaseAdmin
       .from('visitas')
       .select(`
         id, id_qr, visitante_id, guard_id, tipo, fecha_hora, expires_at, cedula_url, placa_url,
-        visitante:visitantes(id, nombre, residente_id),
-        guard:usuarios!visitas_guard_id_fkey(id, nombre),
-        residente:usuarios!visitantes_residente_id_fkey(id, nombre, numero_casa)
+        visitante:visitantes (
+          id, nombre, residente_id,
+          residente:usuarios!visitantes_residente_id_fkey (
+            id, nombre, numero_casa
+          )
+        ),
+        guard:usuarios!visitas_guard_id_fkey (
+          id, nombre
+        )
       `)
       .order('fecha_hora', { ascending: false })
+      .gte(from ? 'fecha_hora' : 'id', from || 0) // gte/lte solo si vienen
+      .lte(to ? 'fecha_hora' : 'id', to || Number.MAX_SAFE_INTEGER)
       .limit(Number(limit) || 100);
 
-    if (from) query = query.gte('fecha_hora', from);
-    if (to)   query = query.lte('fecha_hora', to);
-
-    const { data, error } = await query;
     if (error) {
       console.error('[listarVisitasAdmin] supabase error:', error);
       return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
     }
 
+    // Aplastamos visitante.residente -> residente (para el frontend)
     const items = (data || [])
       .map(v => {
+        const residente = v?.visitante?.residente || null;
+
         let evidence_status = 'n/a';
         if (v.tipo === 'Entrada') {
           const hasCed = !!v.cedula_url;
@@ -132,7 +139,8 @@ const listarVisitasAdmin = async (req, res) => {
           else if (!hasCed && !hasPla) evidence_status = 'pending';
           else evidence_status = !hasCed ? 'missing_cedula' : 'missing_placa';
         }
-        return { ...v, evidence_status };
+
+        return { ...v, residente, evidence_status };
       })
       .filter(it => {
         if (estado === 'all') return true;
