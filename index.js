@@ -7,6 +7,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+const adminRoutes = require('./routes/adminRoutes');
 const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
 const vigilanciaRoutes = require('./routes/vigilanciaRoutes');
@@ -48,6 +49,7 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/vigilancia', vigilanciaRoutes);

@@ -8,10 +8,17 @@ const listarVisitantes = async (req, res) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'No autenticado' });
 
+    // ✅ Permitir que admin liste por residente_id (query param) o por sí mismo si no se envía
+    const requesterRole = req.user?.rol || req.user?.role || null;
+    const filterOwner =
+      requesterRole === 'admin' && req.query?.residente_id
+        ? String(req.query.residente_id)
+        : userId;
+
     const { data, error } = await supabase
       .from('visitantes')
       .select('*')
-      .eq('residente_id', userId)
+      .eq('residente_id', filterOwner)
       .order('id', { ascending: false });
 
     if (error) return res.status(500).json({ error: 'No se pudieron cargar los visitantes' });
@@ -34,14 +41,21 @@ const crearVisitante = async (req, res) => {
       marca_vehiculo,
       modelo_vehiculo,
       color_vehiculo,
+      // opcional si admin crea "en nombre de":
+      residente_id,
     } = req.body;
 
     if (!nombre || !identidad || !placa || !marca_vehiculo || !modelo_vehiculo || !color_vehiculo) {
       return res.status(400).json({ error: 'Todos los campos son obligatorios' });
     }
 
+    // ✅ Si quien crea es admin y envía residente_id, usa ese; si no, usa el propio userId
+    const requesterRole = req.user?.rol || req.user?.role || null;
+    const ownerId =
+      requesterRole === 'admin' && residente_id ? String(residente_id) : userId;
+
     const insertPayload = {
-      residente_id: userId,
+      residente_id: ownerId,
       nombre,
       identidad,
       placa,
@@ -79,7 +93,10 @@ const actualizarVisitante = async (req, res) => {
     if (getErr || !existing) {
       return res.status(404).json({ error: 'Visitante no encontrado' });
     }
-    if (existing.residente_id !== userId) {
+
+    // ✅ Permitir que admin actualice cualquier visitante
+    const requesterRole = req.user?.rol || req.user?.role || null;
+    if (existing.residente_id !== userId && requesterRole !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
@@ -131,7 +148,10 @@ const eliminarVisitante = async (req, res) => {
     if (getErr || !existing) {
       return res.status(404).json({ error: 'Visitante no encontrado' });
     }
-    if (existing.residente_id !== userId) {
+
+    // ✅ Permitir que admin elimine cualquier visitante
+    const requesterRole = req.user?.rol || req.user?.role || null;
+    if (existing.residente_id !== userId && requesterRole !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
