@@ -3,32 +3,26 @@ const { supabaseAdmin } = require('../supabaseClient');
 
 /**
  * GET /api/admin/residentes?q=texto
- * Respuesta: { items: [{ id, nombre, numero_casa, correo }] }
+ * Devuelve lista de residentes para el selector (id, nombre, numero_casa, correo)
  */
 const buscarResidentes = async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
 
+    // Base: sólo residentes
     let query = supabaseAdmin
       .from('usuarios')
-      .select('id, nombre, numero_casa, correo, rol')
-      .eq('rol', 'residente')
-      .order('nombre', { ascending: true })
-      .limit(100);
+      .select('id, nombre, numero_casa, correo, role')
+      .eq('role', 'residente')
+      .order('nombre', { ascending: true });
 
     if (q) {
-      const isNum = /^\d+$/.test(q);
-      const orFilter = isNum
-        ? `nombre.ilike.%${q}%,correo.ilike.%${q}%,numero_casa.eq.${q}`
-        : `nombre.ilike.%${q}%,correo.ilike.%${q}%`;
-      query = query.or(orFilter);
+      // Buscar por nombre o correo (agrega otro .or(...) si quieres incluir numero_casa)
+      query = query.ilike('nombre', `%${q}%`);
     }
 
     const { data, error } = await query;
-    if (error) {
-      console.error('[buscarResidentes] supabase error:', error);
-      return res.status(500).json({ error: 'No se pudieron listar residentes' });
-    }
+    if (error) return res.status(500).json({ error: 'No se pudieron listar residentes' });
     return res.json({ items: data || [] });
   } catch (err) {
     console.error('[buscarResidentes] error:', err);
@@ -56,15 +50,15 @@ const crearVisitanteParaResidente = async (req, res) => {
       return res.status(400).json({ error: 'Todos los campos son obligatorios' });
     }
 
-    // Valida que el residente exista y tenga rol 'residente'
+    // Validar residente
     const { data: residente, error: resErr } = await supabaseAdmin
       .from('usuarios')
-      .select('id, rol')
+      .select('id, role')
       .eq('id', residente_id)
       .single();
 
     if (resErr || !residente) return res.status(404).json({ error: 'Residente no encontrado' });
-    if (residente.rol !== 'residente') return res.status(400).json({ error: 'El usuario no es residente' });
+    if (residente.role !== 'residente') return res.status(400).json({ error: 'El usuario no es residente' });
 
     const payload = {
       residente_id,
@@ -82,10 +76,7 @@ const crearVisitanteParaResidente = async (req, res) => {
       .select()
       .single();
 
-    if (error) {
-      console.error('[crearVisitanteParaResidente] supabase error:', error);
-      return res.status(500).json({ error: 'No se pudo crear el visitante' });
-    }
+    if (error) return res.status(500).json({ error: 'No se pudo crear el visitante' });
     return res.status(201).json(data);
   } catch (err) {
     console.error('[crearVisitanteParaResidente] error:', err);
@@ -95,42 +86,62 @@ const crearVisitanteParaResidente = async (req, res) => {
 
 /**
  * GET /api/admin/visitas?from=&to=&estado=(all|pending|complete)&limit=100
- * Respuesta: { items: [...] }
+ * Devuelve visitas con evidencia y estado (para AdminVisitsScreen)
+ *
+ * Importante:
+ * - Desambiguamos la relación visitas → visitantes con el nombre de FK explícito.
+ * - Anidamos residente dentro de visitante (visitantes.residente_id → usuarios.id).
+ * - guard_id se mantiene tal cual.
  */
 const listarVisitasAdmin = async (req, res) => {
   try {
     const { from, to, estado = 'all', limit = '100' } = req.query;
 
-    // ✅ Hacemos el join del residente DENTRO de visitante (donde vive la FK)
-    const { data, error } = await supabaseAdmin
+    // ⚠️ Usa el nombre de tu FK real. Según tu error, tienes dos:
+    // 'fk_visitante' y 'fk_visitas_visitante'. Aquí usamos 'fk_visitas_visitante'.
+    // Si en tu proyecto el correcto es 'fk_visitante', cambia la línea:
+    // visitante:visitantes!fk_visitante (...)
+    let query = supabaseAdmin
       .from('visitas')
       .select(`
-        id, id_qr, visitante_id, guard_id, tipo, fecha_hora, expires_at, cedula_url, placa_url,
-        visitante:visitantes (
-          id, nombre, residente_id,
+        id,
+        id_qr,
+        visitante_id,
+        guard_id,
+        tipo,
+        fecha_hora,
+        expires_at,
+        cedula_url,
+        placa_url,
+        visitante:visitantes!fk_visitas_visitante (
+          id,
+          nombre,
           residente:usuarios!visitantes_residente_id_fkey (
-            id, nombre, numero_casa
+            id,
+            nombre,
+            numero_casa
           )
         ),
         guard:usuarios!visitas_guard_id_fkey (
-          id, nombre
+          id,
+          nombre
         )
       `)
       .order('fecha_hora', { ascending: false })
-      .gte(from ? 'fecha_hora' : 'id', from || 0) // gte/lte solo si vienen
-      .lte(to ? 'fecha_hora' : 'id', to || Number.MAX_SAFE_INTEGER)
       .limit(Number(limit) || 100);
+
+    if (from) query = query.gte('fecha_hora', from);
+    if (to) query = query.lte('fecha_hora', to);
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('[listarVisitasAdmin] supabase error:', error);
       return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
     }
 
-    // Aplastamos visitante.residente -> residente (para el frontend)
     const items = (data || [])
       .map(v => {
-        const residente = v?.visitante?.residente || null;
-
         let evidence_status = 'n/a';
         if (v.tipo === 'Entrada') {
           const hasCed = !!v.cedula_url;
@@ -140,7 +151,34 @@ const listarVisitasAdmin = async (req, res) => {
           else evidence_status = !hasCed ? 'missing_cedula' : 'missing_placa';
         }
 
-        return { ...v, residente, evidence_status };
+        // Normalizamos la forma esperada por tu app:
+        const visitante = v.visitante ? { id: v.visitante.id, nombre: v.visitante.nombre } : null;
+        const residente =
+          v.visitante?.residente
+            ? {
+                id: v.visitante.residente.id,
+                nombre: v.visitante.residente.nombre,
+                numero_casa: v.visitante.residente.numero_casa ?? null,
+              }
+            : null;
+
+        const guard = v.guard ? { id: v.guard.id, nombre: v.guard.nombre } : null;
+
+        return {
+          id: v.id,
+          id_qr: v.id_qr,
+          visitante_id: v.visitante_id,
+          guard_id: v.guard_id ?? null,
+          tipo: v.tipo,
+          fecha_hora: v.fecha_hora,
+          expires_at: v.expires_at ?? null,
+          cedula_url: v.cedula_url ?? null,
+          placa_url: v.placa_url ?? null,
+          evidence_status,
+          visitante,
+          residente,
+          guard,
+        };
       })
       .filter(it => {
         if (estado === 'all') return true;
