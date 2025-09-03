@@ -9,20 +9,24 @@ const buscarResidentes = async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
 
-    // Base: sólo residentes
+    // ✅ usar columna correcta: "rol" (no "role")
     let query = supabaseAdmin
       .from('usuarios')
-      .select('id, nombre, numero_casa, correo, role')
-      .eq('role', 'residente')
+      .select('id, nombre, numero_casa, correo, rol')
+      .eq('rol', 'residente')
       .order('nombre', { ascending: true });
 
     if (q) {
-      // Buscar por nombre o correo (agrega otro .or(...) si quieres incluir numero_casa)
-      query = query.ilike('nombre', `%${q}%`);
+      // búsqueda por nombre/correo/casa
+      // si numero_casa fuera numérica, podrías quitarla de este OR
+      query = query.or(`nombre.ilike.%${q}%,correo.ilike.%${q}%,numero_casa.ilike.%${q}%`);
     }
 
     const { data, error } = await query;
-    if (error) return res.status(500).json({ error: 'No se pudieron listar residentes' });
+    if (error) {
+      console.error('[buscarResidentes] supabase error:', error);
+      return res.status(500).json({ error: 'No se pudieron listar residentes' });
+    }
     return res.json({ items: data || [] });
   } catch (err) {
     console.error('[buscarResidentes] error:', err);
@@ -53,12 +57,12 @@ const crearVisitanteParaResidente = async (req, res) => {
     // Validar residente
     const { data: residente, error: resErr } = await supabaseAdmin
       .from('usuarios')
-      .select('id, role')
+      .select('id, rol')
       .eq('id', residente_id)
       .single();
 
     if (resErr || !residente) return res.status(404).json({ error: 'Residente no encontrado' });
-    if (residente.role !== 'residente') return res.status(400).json({ error: 'El usuario no es residente' });
+    if (residente.rol !== 'residente') return res.status(400).json({ error: 'El usuario no es residente' });
 
     const payload = {
       residente_id,
@@ -86,21 +90,15 @@ const crearVisitanteParaResidente = async (req, res) => {
 
 /**
  * GET /api/admin/visitas?from=&to=&estado=(all|pending|complete)&limit=100
- * Devuelve visitas con evidencia y estado (para AdminVisitsScreen)
- *
- * Importante:
- * - Desambiguamos la relación visitas → visitantes con el nombre de FK explícito.
- * - Anidamos residente dentro de visitante (visitantes.residente_id → usuarios.id).
- * - guard_id se mantiene tal cual.
  */
 const listarVisitasAdmin = async (req, res) => {
   try {
     const { from, to, estado = 'all', limit = '100' } = req.query;
 
-    // ⚠️ Usa el nombre de tu FK real. Según tu error, tienes dos:
-    // 'fk_visitante' y 'fk_visitas_visitante'. Aquí usamos 'fk_visitas_visitante'.
-    // Si en tu proyecto el correcto es 'fk_visitante', cambia la línea:
-    // visitante:visitantes!fk_visitante (...)
+    // ✅ usar aliases de FK estándar:
+    // - visitas.visitante_id -> visitantes.id => visitas_visitante_id_fkey
+    // - visitantes.residente_id -> usuarios.id => visitantes_residente_id_fkey
+    // - visitas.guard_id -> usuarios.id => visitas_guard_id_fkey
     let query = supabaseAdmin
       .from('visitas')
       .select(`
@@ -113,7 +111,7 @@ const listarVisitasAdmin = async (req, res) => {
         expires_at,
         cedula_url,
         placa_url,
-        visitante:visitantes!fk_visitas_visitante (
+        visitante:visitantes!visitas_visitante_id_fkey (
           id,
           nombre,
           residente:usuarios!visitantes_residente_id_fkey (
@@ -151,7 +149,6 @@ const listarVisitasAdmin = async (req, res) => {
           else evidence_status = !hasCed ? 'missing_cedula' : 'missing_placa';
         }
 
-        // Normalizamos la forma esperada por tu app:
         const visitante = v.visitante ? { id: v.visitante.id, nombre: v.visitante.nombre } : null;
         const residente =
           v.visitante?.residente
