@@ -94,52 +94,81 @@ const crearVisitanteParaResidente = async (req, res) => {
 const listarVisitasAdmin = async (req, res) => {
   try {
     const { from, to, estado = 'all', limit = '100' } = req.query;
+    const max = Number(limit) || 100;
 
-    // ✅ usar aliases de FK estándar:
-    // - visitas.visitante_id -> visitantes.id => visitas_visitante_id_fkey
-    // - visitantes.residente_id -> usuarios.id => visitantes_residente_id_fkey
-    // - visitas.guard_id -> usuarios.id => visitas_guard_id_fkey
-    let query = supabaseAdmin
+    // 1) Traer visitas "planas"
+    let vQuery = supabaseAdmin
       .from('visitas')
-      .select(`
-        id,
-        id_qr,
-        visitante_id,
-        guard_id,
-        tipo,
-        fecha_hora,
-        expires_at,
-        cedula_url,
-        placa_url,
-        visitante:visitantes!visitas_visitante_id_fkey (
-          id,
-          nombre,
-          residente:usuarios!visitantes_residente_id_fkey (
-            id,
-            nombre,
-            numero_casa
-          )
-        ),
-        guard:usuarios!visitas_guard_id_fkey (
-          id,
-          nombre
-        )
-      `)
+      .select('id, id_qr, visitante_id, guard_id, tipo, fecha_hora, expires_at, cedula_url, placa_url')
       .order('fecha_hora', { ascending: false })
-      .limit(Number(limit) || 100);
+      .limit(max);
 
-    if (from) query = query.gte('fecha_hora', from);
-    if (to) query = query.lte('fecha_hora', to);
+    if (from) vQuery = vQuery.gte('fecha_hora', from);
+    if (to) vQuery = vQuery.lte('fecha_hora', to);
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('[listarVisitasAdmin] supabase error:', error);
+    const { data: visitas, error: eVis } = await vQuery;
+    if (eVis) {
+      console.error('[listarVisitasAdmin] visitas error:', eVis);
       return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
     }
 
-    const items = (data || [])
+    if (!visitas || visitas.length === 0) {
+      return res.json({ items: [] });
+    }
+
+    // 2) Traer visitantes vinculados
+    const visitanteIds = [...new Set(visitas.map(v => v.visitante_id).filter(Boolean))];
+    let visitantes = [];
+    if (visitanteIds.length) {
+      const { data, error } = await supabaseAdmin
+        .from('visitantes')
+        .select('id, nombre, residente_id')
+        .in('id', visitanteIds);
+      if (error) {
+        console.error('[listarVisitasAdmin] visitantes error:', error);
+        return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
+      }
+      visitantes = data || [];
+    }
+
+    // 3) Traer residentes y guards (usuarios)
+    const residenteIds = [...new Set(visitantes.map(v => v.residente_id).filter(Boolean))];
+    const guardIds = [...new Set(visitas.map(v => v.guard_id).filter(Boolean))];
+
+    let residentes = [];
+    if (residenteIds.length) {
+      const { data, error } = await supabaseAdmin
+        .from('usuarios')
+        .select('id, nombre, numero_casa')
+        .in('id', residenteIds);
+      if (error) {
+        console.error('[listarVisitasAdmin] residentes error:', error);
+        return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
+      }
+      residentes = data || [];
+    }
+
+    let guards = [];
+    if (guardIds.length) {
+      const { data, error } = await supabaseAdmin
+        .from('usuarios')
+        .select('id, nombre')
+        .in('id', guardIds);
+      if (error) {
+        console.error('[listarVisitasAdmin] guards error:', error);
+        return res.status(500).json({ error: 'No se pudieron cargar las visitas' });
+      }
+      guards = data || [];
+    }
+
+    // 4) Indexar y ensamblar respuesta
+    const byVisitante = Object.fromEntries(visitantes.map(v => [v.id, v]));
+    const byResidente = Object.fromEntries(residentes.map(u => [u.id, u]));
+    const byGuard = Object.fromEntries(guards.map(u => [u.id, u]));
+
+    const items = (visitas || [])
       .map(v => {
+        // estado de evidencia
         let evidence_status = 'n/a';
         if (v.tipo === 'Entrada') {
           const hasCed = !!v.cedula_url;
@@ -149,17 +178,20 @@ const listarVisitasAdmin = async (req, res) => {
           else evidence_status = !hasCed ? 'missing_cedula' : 'missing_placa';
         }
 
-        const visitante = v.visitante ? { id: v.visitante.id, nombre: v.visitante.nombre } : null;
-        const residente =
-          v.visitante?.residente
-            ? {
-                id: v.visitante.residente.id,
-                nombre: v.visitante.residente.nombre,
-                numero_casa: v.visitante.residente.numero_casa ?? null,
-              }
-            : null;
+        const visitanteRaw = byVisitante[v.visitante_id];
+        const visitante = visitanteRaw ? { id: visitanteRaw.id, nombre: visitanteRaw.nombre } : null;
 
-        const guard = v.guard ? { id: v.guard.id, nombre: v.guard.nombre } : null;
+        let residente = null;
+        if (visitanteRaw?.residente_id) {
+          const r = byResidente[visitanteRaw.residente_id];
+          if (r) {
+            residente = { id: r.id, nombre: r.nombre, numero_casa: r.numero_casa ?? null };
+          }
+        }
+
+        const guard = v.guard_id && byGuard[v.guard_id]
+          ? { id: v.guard_id, nombre: byGuard[v.guard_id].nombre }
+          : null;
 
         return {
           id: v.id,
