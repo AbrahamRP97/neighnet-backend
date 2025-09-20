@@ -317,7 +317,7 @@ const forgotPassword = async (req, res) => {
     .eq('correo', correo)
     .single();
 
-  // Siempre responder genérico por seguridad (no revelar si existe o no)
+  // Respuesta genérica por seguridad
   if (!user) {
     return res.json({ message: 'Si el correo está registrado, se enviará un mail de recuperación' });
   }
@@ -329,49 +329,88 @@ const forgotPassword = async (req, res) => {
     .from('password_resets')
     .insert([{ user_email: correo, token, expires_at: expiresAt }]);
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  });
-
-  // 🚀 Nuevo: usar HTTPS "trampoline" que redirige a neighnet://reset-password?token=...
+  // 🚀 HTTPS trampoline → neighnet://...
   const base = process.env.APP_PUBLIC_BASE_URL || 'https://neighnet-backend.onrender.com';
   const link = `${base}/api/auth/deeplink/reset-password?token=${encodeURIComponent(token)}`;
 
-  try {
-    await transporter.sendMail({
-      from: `NeighNet <${process.env.EMAIL_USER}>`,
-      to: correo,
-      subject: 'Restablece tu contraseña',
-      text: `Hola,
+  // ✅ Transporter SMTP explícito (Gmail) con pool y timeouts
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : true, // true en 465
+    auth: {
+      user: process.env.EMAIL_USER, // tu correo gmail completo
+      pass: process.env.EMAIL_PASS, // App Password (16 caracteres)
+    },
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 50,
+    connectionTimeout: 15_000, // 15s
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
+  });
+
+  const mailOptions = {
+    from: `NeighNet <${process.env.EMAIL_USER}>`,
+    to: correo,
+    subject: 'Restablece tu contraseña',
+    text: `Hola,
 Has solicitado restablecer tu contraseña en NeighNet.
-Para crear una nueva contraseña, abre este enlace desde tu dispositivo con la app instalada:
+Abre este enlace desde tu dispositivo con la app instalada:
 ${link}
 
 Si no fuiste tú, ignora este mensaje.
 Este enlace es válido por 1 hora.
 `,
-      html: `
-        <div style="font-family:sans-serif;max-width:500px;padding:24px;margin:auto;background:#f5faff;border-radius:12px">
-          <h2 style="color:#1e90ff">Recupera tu contraseña</h2>
-          <p>Hola,</p>
-          <p>Haz clic en el botón para restablecer tu contraseña en <b>NeighNet</b>.</p>
-          <p>
-            <a href="${link}" style="background:#1e90ff;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">
-              Restablecer contraseña
-            </a>
-          </p>
-          <p style="margin-top:14px">Si el botón no abre la app, copia y pega este enlace en tu navegador:</p>
-          <p style="word-break:break-all;"><a href="${link}">${link}</a></p>
-          <p style="font-size:13px;color:#888;margin-top:12px">Este enlace es válido por 1 hora.</p>
-        </div>
-      `,
+    html: `
+      <div style="font-family:sans-serif;max-width:500px;padding:24px;margin:auto;background:#f5faff;border-radius:12px">
+        <h2 style="color:#1e90ff">Recupera tu contraseña</h2>
+        <p>Hola,</p>
+        <p>Haz clic en el botón para restablecer tu contraseña en <b>NeighNet</b>.</p>
+        <p>
+          <a href="${link}" style="background:#1e90ff;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">
+            Restablecer contraseña
+          </a>
+        </p>
+        <p style="margin-top:14px">Si el botón no abre la app, copia y pega este enlace en tu navegador:</p>
+        <p style="word-break:break-all;"><a href="${link}">${link}</a></p>
+        <p style="font-size:13px;color:#888;margin-top:12px">Este enlace es válido por 1 hora.</p>
+      </div>
+    `,
+  };
+
+  // 🔁 Reintentos básicos ante errores transitorios (p. ej. 4xx temporales del SMTP o timeouts)
+  const sendWithRetry = async (attempt = 1) => {
+    try {
+      await transporter.sendMail(mailOptions);
+      return { ok: true };
+    } catch (err) {
+      const msg = err?.message || String(err);
+      // Log útil en servidor
+      console.error(`[forgotPassword] sendMail attempt ${attempt} failed:`, msg);
+
+      // Reintenta una vez más si es la primera falla y parece transitorio
+      const transient =
+        /ETIMEDOUT|ECONNRESET|EAI_AGAIN|TLS|Connection closed|Too many|rate|tempor/i.test(msg);
+      if (attempt < 2 && transient) {
+        await new Promise(r => setTimeout(r, 1200));
+        return sendWithRetry(attempt + 1);
+      }
+      return { ok: false, error: msg };
+    }
+  };
+
+  const result = await sendWithRetry();
+
+  if (!result.ok) {
+    // 503 para indicar servicio de correo no disponible temporalmente
+    return res.status(503).json({
+      error: 'Servicio de correo no disponible. Intenta de nuevo en unos minutos.',
+      detail: result.error?.slice(0, 300), // no exponer todo
     });
-    res.json({ message: 'Correo enviado' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'No se pudo enviar el correo' });
   }
+
+  return res.json({ message: 'Correo enviado' });
 };
 
 
