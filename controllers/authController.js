@@ -317,6 +317,7 @@ const forgotPassword = async (req, res) => {
     .eq('correo', correo)
     .single();
 
+  // Siempre responder genérico por seguridad (no revelar si existe o no)
   if (!user) {
     return res.json({ message: 'Si el correo está registrado, se enviará un mail de recuperación' });
   }
@@ -333,7 +334,10 @@ const forgotPassword = async (req, res) => {
     auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
   });
 
-  const link = `neighnet://reset-password?token=${token}`;
+  // 🚀 Nuevo: usar HTTPS "trampoline" que redirige a neighnet://reset-password?token=...
+  const base = process.env.APP_PUBLIC_BASE_URL || 'https://neighnet-backend.onrender.com';
+  const link = `${base}/api/auth/deeplink/reset-password?token=${encodeURIComponent(token)}`;
+
   try {
     await transporter.sendMail({
       from: `NeighNet <${process.env.EMAIL_USER}>`,
@@ -341,9 +345,11 @@ const forgotPassword = async (req, res) => {
       subject: 'Restablece tu contraseña',
       text: `Hola,
 Has solicitado restablecer tu contraseña en NeighNet.
-Para crear una nueva contraseña, abre este enlace desde la app:
+Para crear una nueva contraseña, abre este enlace desde tu dispositivo con la app instalada:
 ${link}
+
 Si no fuiste tú, ignora este mensaje.
+Este enlace es válido por 1 hora.
 `,
       html: `
         <div style="font-family:sans-serif;max-width:500px;padding:24px;margin:auto;background:#f5faff;border-radius:12px">
@@ -355,8 +361,9 @@ Si no fuiste tú, ignora este mensaje.
               Restablecer contraseña
             </a>
           </p>
-          <p>Si no fuiste tú, simplemente ignora este mensaje.</p>
-          <p style="font-size:13px;color:#888">Este enlace es válido por 1 hora.</p>
+          <p style="margin-top:14px">Si el botón no abre la app, copia y pega este enlace en tu navegador:</p>
+          <p style="word-break:break-all;"><a href="${link}">${link}</a></p>
+          <p style="font-size:13px;color:#888;margin-top:12px">Este enlace es válido por 1 hora.</p>
         </div>
       `,
     });
@@ -366,6 +373,7 @@ Si no fuiste tú, ignora este mensaje.
     res.status(500).json({ error: 'No se pudo enviar el correo' });
   }
 };
+
 
 // Reset password — guardar nueva contraseña (pública)
 const resetPassword = async (req, res) => {

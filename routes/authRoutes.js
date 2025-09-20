@@ -1,19 +1,6 @@
 const express = require('express');
-const {
-  registrarUsuario,
-  loginUsuario,
-  actualizarUsuario,
-  obtenerUsuario,
-  obtenerUsuarioMe,
-  eliminarUsuario,
-  forgotPassword,
-  resetPassword,
-  cambiarContrasena,
-  setPushToken,
-  sendPhoneCode,
-  verifyPhoneCode,
-} = require('../controllers/authController');
-
+const { registrarUsuario, loginUsuario, actualizarUsuario, obtenerUsuario, obtenerUsuarioMe, eliminarUsuario, forgotPassword, resetPassword,
+  cambiarContrasena, setPushToken, sendPhoneCode, verifyPhoneCode } = require('../controllers/authController');
 const { obtenerUsuarioPublico } = require('../controllers/authPublicController');
 const authMiddleware = require('../middleware/authMiddleware');
 const passwordPolicy = require('../middleware/passwordPolicy');
@@ -135,6 +122,15 @@ router.get('/diag/lookup', async (req, res) => {
 
 // Público (limitado): ver perfil básico de otro usuario
 router.get('/public/:id', obtenerUsuarioPublico);
+
+// ✅ Deep link trampoline (SIN auth): redirige del navegador a la app
+router.get('/deeplink/reset-password', (req, res) => {
+  const { token } = req.query;
+  if (!token || String(token).trim() === '') {
+    return res.status(400).send('Token requerido');
+  }
+  return res.redirect(302, `neighnet://reset-password?token=${encodeURIComponent(String(token))}`);
+});
 
 // ------------------- Rutas protegidas -------------------
 router.use(authMiddleware);
